@@ -163,30 +163,6 @@ double calculate_pair_distance(const PrecomputedMol& mol1, const PrecomputedMol&
     return total_cost;
 }
 
-double calculate_total_cost_symmetric(const std::vector<std::string>& smiles_list) {
-    size_t n = smiles_list.size();
-    if (n < 2) {
-        return 0.0;
-    }
-    std::vector<PrecomputedMol> precomputed_mols(n);
-
-    // Stage 1: Pre-computation (in parallel)
-    #pragma omp parallel for schedule(static)
-    for (size_t i = 0; i < n; ++i) {
-        precomputed_mols[i] = precompute_mol_data(smiles_list[i]);
-    }
-
-    // Stage 2: Pairwise distance calculation and summation (in parallel)
-    double total_cost = 0.0;
-    #pragma omp parallel for schedule(dynamic) reduction(+:total_cost)
-    for (size_t i = 0; i < n; ++i) {
-        for (size_t j = i + 1; j < n; ++j) {
-            total_cost += calculate_pair_distance(precomputed_mols[i], precomputed_mols[j]);
-        }
-    }
-    return total_cost;
-}
-
 std::vector<double> calculate_symmetric_distance_matrix(const std::vector<std::string>& smiles_list) {
     size_t n = smiles_list.size();
     std::vector<PrecomputedMol> precomputed_mols(n);
@@ -234,6 +210,46 @@ std::vector<double> filter2_batch_symmetric(const std::vector<PrecomputedMol>& m
         if (error_count > 0) {
             std::cerr << "Warning: " << error_count << " pairwise distances exceeded 10000." << std::endl;
         }
+
+    return results;
+}
+
+std::vector<double> calculate_distance_matrix(const std::vector<std::string>& smiles_list1, const std::vector<std::string>& smiles_list2) {
+    size_t n1 = smiles_list1.size();
+    size_t n2 = smiles_list2.size();
+    std::vector<PrecomputedMol> mols1(n1);
+    std::vector<PrecomputedMol> mols2(n2);
+
+    // Precompute molecules (can parallelize if needed)
+    #pragma omp parallel for schedule(static)
+    for (size_t i = 0; i < n1; ++i) {
+        mols1[i] = precompute_mol_data(smiles_list1[i]);
+    }
+    #pragma omp parallel for schedule(static)
+    for (size_t j = 0; j < n2; ++j) {
+        mols2[j] = precompute_mol_data(smiles_list2[j]);
+    }
+
+    std::vector<double> results(n1 * n2, 0.0);
+
+    int error_count = 0;
+    #pragma omp parallel for schedule(dynamic) reduction(+:error_count)
+    for (size_t i = 0; i < n1; ++i) {
+        for (size_t j = 0; j < n2; ++j) {
+            double dist = calculate_pair_distance(mols1[i], mols2[j]);
+            if (std::isfinite(dist) && dist >= 0 && dist <= 10000.0) {
+                results[i * n2 + j] = dist;
+            } else {
+                results[i * n2 + j] = 0.0;
+                if (dist > 10000.0) {
+                    error_count++;
+                }
+            }
+        }
+    }
+    if (error_count > 0) {
+        std::cerr << "Warning: " << error_count << " pairwise distances exceeded 10000." << std::endl;
+    }
 
     return results;
 }

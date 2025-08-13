@@ -27,8 +27,8 @@ struct PrecomputedMol {
 // This will be the single entry point from Cython.
 std::vector<double> calculate_symmetric_distance_matrix(const std::vector<std::string>& smiles_list);
 
-// New function for the `filter2` use case.
-double calculate_total_cost_symmetric(const std::vector<std::string>& smiles_list);
+// New function: computes lower bound MCES matrix between two lists (not symmetric)
+std::vector<double> calculate_distance_matrix(const std::vector<std::string>& smiles_list1, const std::vector<std::string>& smiles_list2);
 
 std::vector<double> filter2_batch_symmetric(const std::vector<PrecomputedMol>& mols);
 
