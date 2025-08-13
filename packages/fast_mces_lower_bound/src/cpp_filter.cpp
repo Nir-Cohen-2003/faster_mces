@@ -13,40 +13,45 @@
 #include <munkres.h>
 
 // Real implementation of the LAP solver using munkres-cpp
+#ifdef USE_LAPJV
+#include "lap.h"
 double solve_lap(const std::vector<std::vector<double>>& cost_matrix) {
-    if (cost_matrix.empty() || cost_matrix[0].empty()) {
-        return 0.0;
+    if (cost_matrix.empty() || cost_matrix[0].empty()) return 0.0;
+    size_t n = cost_matrix.size();
+    // lapjv expects a double** cost matrix
+    std::vector<double*> cost_ptrs(n);
+    std::vector<std::vector<double>> cost_copy(n, std::vector<double>(n, 0.0));
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t j = 0; j < n; ++j) {
+            cost_copy[i][j] = (i < cost_matrix.size() && j < cost_matrix[i].size()) ? cost_matrix[i][j] : 0.0;
+        }
+        cost_ptrs[i] = cost_copy[i].data();
     }
-
-    // The munkres-cpp library uses its own Matrix class.
-    // We need to convert our std::vector<std::vector<double>>.
+    std::vector<int> rowsol(n), colsol(n);
+    std::vector<double> u(n), v(n);
+    double lap_cost = lap(n, cost_ptrs.data(), rowsol.data(), colsol.data(), u.data(), v.data());
+    return lap_cost;
+}
+#else
+#include <munkres.h>
+double solve_lap(const std::vector<std::vector<double>>& cost_matrix) {
+    if (cost_matrix.empty() || cost_matrix[0].empty()) return 0.0;
     size_t rows = cost_matrix.size();
     size_t cols = cost_matrix[0].size();
     Matrix<double> matrix(rows, cols);
-
-    for (size_t i = 0; i < rows; ++i) {
-        for (size_t j = 0; j < cols; ++j) {
+    for (size_t i = 0; i < rows; ++i)
+        for (size_t j = 0; j < cols; ++j)
             matrix(i, j) = cost_matrix[i][j];
-        }
-    }
-
-    // Create a Munkres object and solve the assignment problem.
     Munkres<double> m;
     m.solve(matrix);
-
     double total_cost = 0.0;
-    // The 'solve' method modifies the matrix in-place.
-    // The assigned pairs are marked with a 0.
-    for (size_t i = 0; i < rows; ++i) {
-        for (size_t j = 0; j < cols; ++j) {
-            if (matrix(i, j) == 0) {
-                // BUG: This assumes 0 means assignment, but what if original cost was 0?
+    for (size_t i = 0; i < rows; ++i)
+        for (size_t j = 0; j < cols; ++j)
+            if (matrix(i, j) == 0)
                 total_cost += cost_matrix[i][j];
-            }
-        }
-    }
     return total_cost;
 }
+#endif
 
 
 PrecomputedMol precompute_mol_data(const std::string& smiles) {

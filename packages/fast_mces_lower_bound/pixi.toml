@@ -1,14 +1,12 @@
 [workspace]
-authors = ["Nir <<>>"]
-channels = ["conda-forge"]
-name = "mces"
-platforms = ["linux-64"]
-version = "0.1.0"
-preview = ["pixi-build"]
+channels = ["https://prefix.dev/conda-forge"]
+platforms = ["linux-64", "win-64"]
+preview = ["pixi-build"]                                  
+
 [tasks]
 
 [package]
-name = "mces"
+name = "fast_mces_lower_bound"
 version = "0.1.0"
 authors = ["Nir <>"]
 

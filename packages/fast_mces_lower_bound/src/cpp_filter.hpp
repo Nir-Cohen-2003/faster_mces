@@ -24,6 +24,8 @@ struct PrecomputedMol {
     std::vector<AtomData> atom_data_vec;
 };
 
+double solve_lap(const std::vector<std::vector<double>>& cost_matrix);
+
 // This will be the single entry point from Cython.
 std::vector<double> calculate_symmetric_distance_matrix(const std::vector<std::string>& smiles_list);
 
