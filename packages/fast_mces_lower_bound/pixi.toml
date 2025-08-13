@@ -1,45 +1,78 @@
 [workspace]
-channels = ["https://prefix.dev/conda-forge"]
-platforms = ["linux-64", "win-64"]
+channels = ["https://prefix.dev/conda-forge","conda-forge",]
+platforms = ["linux-64"]
 preview = ["pixi-build"]                                  
 
+
+[dependencies]
+librdkit-dev = ">=2024.0.0"
+# fast_mces_lower_bound = { path = "." }
+python = "*"
+cmake = "*"
+ninja = "*"
+nanobind = ">=2.4.0"
+# rdkit = ">=2024.0.0"
+cxx-compiler = "*"
+boost-cpp = "*"
+eigen = "*"
+
 [tasks]
+# Configure CMake
+configure = { cmd = [
+    "cmake",
+    "-G",
+    "Ninja",
+    "-S",
+    ".",
+    "-B",
+    ".build",
+    "-DCMAKE_BUILD_TYPE=Release",
+] }
+
+# Build the project (depends on configure)
+build = { cmd = ["ninja", "-C", ".build"], depends-on = ["configure"] }
+
+# Start task: import the Python module (depends on build)
+start = { cmd = "python -c 'import fast_mces_lower_bound'", depends-on = ["build"] }
 
 [package]
 name = "fast_mces_lower_bound"
 version = "0.1.0"
-authors = ["Nir <>"]
+authors = ["Nir Cohen"]
 
 [package.build]
-backend = { name = "pixi-build-cmake", version = "0.1.*" }
+backend = { name = "pixi-build-cmake", version = "*" }
 channels = [
   "https://prefix.dev/pixi-build-backends",
   "https://prefix.dev/conda-forge",
+  "conda-forge",
 ]
 [package.build.configuration]
 # This will run cmake, build and install the package
-cmake_args = ["-S", ".", "-B", "build", "-DCMAKE_INSTALL_PREFIX=$PREFIX", "-DCMAKE_BUILD_TYPE=Release"]
-build_args = ["--build", "build"]
-install_args = ["--install", "build"]
+extra-args = ["-DCMAKE_BUILD_TYPE=Release"] 
 
 [package.build-dependencies]
 cmake = "*"
 ninja = "*"
-
-[package.host-dependencies]
-# Virtual package that pulls in the correct C++ compiler for the target platform
+nanobind = ">=2.4.0"
+python = "*"
+# rdkit = ">=2024.0.0"
+librdkit-dev = ">=2024.0.0"
 cxx-compiler = "*"
-# RDKit is needed for its C++ headers and libraries during compilation
-rdkit = ">=2024.0.0"
-librdkit = ">=2024.0.0"
-# Add boost-cpp for the C++ headers and libraries
 boost-cpp = "*"
 eigen = "*"
-# # The munkres library for the Hungarian algorithm
-munkres = "*"
+[package.host-dependencies]
+cmake = "*"
+ninja = "*"
+nanobind = ">=2.4.0"
+python = "*"
+# rdkit = ">=2024.0.0"
+librdkit-dev = ">=2024.0.0"
+cxx-compiler = "*"
+boost-cpp = "*"
+eigen = "*"
 
 [package.run-dependencies]
 # The runtime dependencies of the package
-rdkit = ">=2024.0.0"
-librdkit = ">=2024.0.0"
-munkres = "*"
+# rdkit = ">=2024.0.0"
+librdkit-dev = ">=2024.0.0"

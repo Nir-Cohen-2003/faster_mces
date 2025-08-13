@@ -2,31 +2,36 @@ cmake_minimum_required(VERSION 3.15)
 project(mces LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
-# Find dependencies
-find_package(Boost REQUIRED)
+
+find_package(Boost REQUIRED COMPONENTS system serialization iostreams)
 find_package(Eigen3 REQUIRED)
-find_package(RDKit REQUIRED COMPONENTS GraphMol SmilesParse)
 
-# Add the library
-add_library(mces_filter src/fast_mol_filter/cpp_filter.cpp)
+# Manually set RDKit include and library paths
+set(RDKIT_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/../test_rdkit/.pixi/envs/default/include/rdkit")
+set(RDKIT_LIB_DIR "${CMAKE_SOURCE_DIR}/../test_rdkit/.pixi/envs/default/lib")
 
-# Link against the dependencies
-target_link_libraries(mces_filter PRIVATE 
-    RDKit::GraphMol
-    RDKit::SmilesParse
-    Eigen3::Eigen 
-)
+add_library(mces_lower_bound src/cpp_filter.cpp)
 
-# Add include directories
-target_include_directories(mces_filter PUBLIC
+target_include_directories(mces_lower_bound PRIVATE
+    ${RDKIT_INCLUDE_DIR}
+    ${Boost_INCLUDE_DIRS}
+    ${Eigen3_INCLUDE_DIRS}
     $<INSTALL_INTERFACE:include>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/fast_mol_filter>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
 )
 
-# Install the library and headers
-install(TARGETS mces_filter
+target_link_directories(mces_lower_bound PRIVATE ${RDKIT_LIB_DIR})
+
+target_link_libraries(mces_lower_bound PRIVATE
+    RDKitGraphMol
+    RDKitSmilesParse
+    Eigen3::Eigen
+    ${Boost_LIBRARIES}
+)
+
+install(TARGETS mces_lower_bound
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
     INCLUDES DESTINATION include
 )
-install(FILES src/fast_mol_filter/cpp_filter.hpp DESTINATION include/fast_mol_filter)
+install(FILES src/cpp_filter.hpp DESTINATION include/fast_mces_lower_bound)
