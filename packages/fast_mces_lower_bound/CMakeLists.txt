@@ -30,7 +30,7 @@ endif()
 set(RDKIT_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/.pixi/envs/default/include/rdkit")
 set(RDKIT_LIB_DIR "${CMAKE_SOURCE_DIR}/.pixi/envs/default/lib")
 
-add_library(mces_lower_bound src/cpp_filter.cpp)
+add_library(mces_lower_bound src/cpp_filter.cpp src/lap.cpp)
 
 target_include_directories(mces_lower_bound PRIVATE
     ${RDKIT_INCLUDE_DIR}
@@ -48,6 +48,8 @@ target_link_libraries(mces_lower_bound PRIVATE
     Eigen3::Eigen
     ${Boost_LIBRARIES}
 )
+
+target_compile_definitions(mces_lower_bound PRIVATE USE_LAPJV)
 
 install(TARGETS mces_lower_bound
     LIBRARY DESTINATION lib
