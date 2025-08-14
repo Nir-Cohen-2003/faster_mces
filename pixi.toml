@@ -1,10 +1,11 @@
 [workspace]
 authors = ["Nir"]
-channels = ["conda-forge"]
+channels = ["https://prefix.dev/conda-forge"]
 name = "mces_splitting"
 platforms = ["linux-64"]
 version = "0.1.0"
 preview = ["pixi-build"]
+
 [tasks]
 
 [dependencies]
@@ -14,3 +15,12 @@ numpy = ">=2.3.2,<3"
 scipy = ">=1.16.0,<2"
 networkx = ">=3.5,<4"
 rustworkx = ">=0.16.0,<0.17"
+
+[package.build] 
+backend = { name = "pixi-build-python", version = "==0.3.2" }
+
+[package.host-dependencies] 
+hatchling = "*"
+
+[package.run-dependencies] 
+fast_mces_lower_bound = { path = "packages/fast_mces_lower_bound" }

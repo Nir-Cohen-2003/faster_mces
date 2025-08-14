@@ -1,6 +1,11 @@
 {
     "C_Cpp.default.compilerPath": "/usr/bin/gcc-14",
     "files.associations": {
-        "ostream": "cpp"
+        "ostream": "cpp",
+        "array": "cpp",
+        "string": "cpp",
+        "string_view": "cpp",
+        "ranges": "cpp",
+        "span": "cpp"
     }
 }

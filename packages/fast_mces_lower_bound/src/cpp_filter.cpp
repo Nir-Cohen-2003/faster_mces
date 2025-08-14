@@ -8,13 +8,8 @@
 #include <algorithm>
 #include <stdexcept>
 #include <set>
-
-// Include the Hungarian algorithm implementation
-#include <munkres.h>
-
-// Real implementation of the LAP solver using munkres-cpp
-#ifdef USE_LAPJV
 #include "lap.h"
+
 double solve_lap(const std::vector<std::vector<double>>& cost_matrix) {
     if (cost_matrix.empty() || cost_matrix[0].empty()) return 0.0;
     size_t n = cost_matrix.size();
@@ -32,26 +27,6 @@ double solve_lap(const std::vector<std::vector<double>>& cost_matrix) {
     double lap_cost = lap(n, cost_ptrs.data(), rowsol.data(), colsol.data(), u.data(), v.data());
     return lap_cost;
 }
-#else
-#include <munkres.h>
-double solve_lap(const std::vector<std::vector<double>>& cost_matrix) {
-    if (cost_matrix.empty() || cost_matrix[0].empty()) return 0.0;
-    size_t rows = cost_matrix.size();
-    size_t cols = cost_matrix[0].size();
-    Matrix<double> matrix(rows, cols);
-    for (size_t i = 0; i < rows; ++i)
-        for (size_t j = 0; j < cols; ++j)
-            matrix(i, j) = cost_matrix[i][j];
-    Munkres<double> m;
-    m.solve(matrix);
-    double total_cost = 0.0;
-    for (size_t i = 0; i < rows; ++i)
-        for (size_t j = 0; j < cols; ++j)
-            if (matrix(i, j) == 0)
-                total_cost += cost_matrix[i][j];
-    return total_cost;
-}
-#endif
 
 
 PrecomputedMol precompute_mol_data(const std::string& smiles) {

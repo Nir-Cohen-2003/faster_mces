@@ -1,41 +1,16 @@
 [workspace]
 channels = ["https://prefix.dev/conda-forge","conda-forge",]
-platforms = ["linux-64"]
+platforms = ["linux-64",'win-64']
 preview = ["pixi-build"]                                  
 
 
 [dependencies]
-librdkit-dev = ">=2024.0.0"
 fast_mces_lower_bound = { path = "." }
 python = "*"
+numpy = "*"
 polars = "*"
-cmake = "*"
-ninja = "*"
-nanobind = ">=2.4.0"
-# rdkit = ">=2024.0.0"
-cxx-compiler = "*"
-boost-cpp = "*"
-eigen = "*"
-
 [tasks]
-# Configure CMake
-clean = { cmd = ["bash", "-c", "[ -d ./.build ] && rm -rf ./.build || true"] }
-configure = { cmd = [
-    "cmake",
-    "-G",
-    "Ninja",
-    "-S",
-    ".",
-    "-B",
-    ".build",
-    "-DCMAKE_BUILD_TYPE=Release",
-    "DCMAKE_USE"
-], depends-on = ["clean"]}
-
-# Build the project (depends on configure)
-build = { cmd = ["ninja", "-C", ".build"], depends-on = ["configure"] }
-install = { cmd = ["cp", "-r", ".build/fast_mces_lower_bound*.so", "."], depends-on = ["build"] }
-start = { cmd = "python -c 'import fast_mces_lower_bound'"}#, depends-on = ["install"] }
+start = { cmd = "python -c 'import fast_mces_lower_bound'"}
 test = "python tests/test.py"
 benchmark = "python tests/benchmark.py"
 
@@ -52,35 +27,23 @@ channels = [
   "conda-forge",
 ]
 [package.build.configuration]
-# This will run cmake, build and install the package
+# The rdkit args are needed, since cmake wasn't able to find the rdkit paths by itself, and needs them to be given 
 extra-args = [
   "-DCMAKE_BUILD_TYPE=Release",
   "-DRDKIT_INCLUDE_DIR=${PREFIX}/include/rdkit",
   "-DRDKIT_LIB_DIR=${PREFIX}/lib"
 ]
-[package.build-dependencies]
-cmake = "*"
-ninja = "*"
-nanobind = ">=2.4.0"
-python = "*"
-# rdkit = ">=2024.0.0"
-librdkit-dev = ">=2024.0.0"
-cxx-compiler = "*"
-boost-cpp = "*"
-eigen = "*"
+
+
 [package.host-dependencies]
 cmake = "*"
-ninja = "*"
 nanobind = ">=2.4.0"
 python = "*"
-# rdkit = ">=2024.0.0"
 librdkit-dev = ">=2024.0.0"
-cxx-compiler = "*"
 boost-cpp = "*"
-eigen = "*"
 
 [package.run-dependencies]
 # The runtime dependencies of the package
-# rdkit = ">=2024.0.0"
 librdkit-dev = ">=2024.0.0"
-polars = "*"
+numpy = "*"
+# polars = "*"

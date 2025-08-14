@@ -4,7 +4,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 find_package(Boost REQUIRED COMPONENTS system serialization iostreams)
-find_package(Eigen3 REQUIRED)
+# find_package(Eigen3 REQUIRED)
 find_package(Python 3.8 COMPONENTS Interpreter Development.Module REQUIRED)
 find_package(OpenMP REQUIRED)
 
@@ -37,7 +37,7 @@ add_library(mces_lower_bound src/cpp_filter.cpp src/lap.cpp)
 target_include_directories(mces_lower_bound PRIVATE
     ${RDKIT_INCLUDE_DIR}
     ${Boost_INCLUDE_DIRS}
-    ${Eigen3_INCLUDE_DIRS}
+    # ${Eigen3_INCLUDE_DIRS}
     $<INSTALL_INTERFACE:include>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
 )
@@ -47,7 +47,7 @@ target_link_directories(mces_lower_bound PRIVATE ${RDKIT_LIB_DIR})
 target_link_libraries(mces_lower_bound PRIVATE
     RDKitGraphMol
     RDKitSmilesParse
-    Eigen3::Eigen
+    # Eigen3::Eigen
     ${Boost_LIBRARIES}
     OpenMP::OpenMP_CXX
 )
@@ -66,7 +66,7 @@ target_include_directories(fast_mces_lower_bound PRIVATE
     ${Python_INCLUDE_DIRS}
     ${RDKIT_INCLUDE_DIR}
     ${Boost_INCLUDE_DIRS}
-    ${Eigen3_INCLUDE_DIRS}
+    # ${Eigen3_INCLUDE_DIRS}
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
 )
 install(

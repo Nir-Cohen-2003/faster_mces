@@ -1,11 +1,10 @@
-from typing import List, Tuple, Optional, Generator, Iterable
+from typing import List, Tuple, Optional, Generator, Iterable , Sequence
 from scipy.optimize import linear_sum_assignment
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 from collections import defaultdict
-from .fast_mol_filter.fast_mol_filter.calculator import calculate_distances_symmetric
-
+from fast_mces_lower_bound import calculate_symmetric_distance_matrix
 def filter1(G1: nx.Graph, G2: nx.Graph) -> float:
     """
      Finds a lower bound for the distance based on degree
@@ -368,7 +367,7 @@ def filter2_batch(graphs_list1, graphs_list2=None):
     
     return results
 
-def filter2_cpp(smiles_list:Iterable[str]) -> NDArray:
+def filter2_cpp(smiles_list:Sequence[str]) -> NDArray:
     """
     Wrapper for the fast C++ MCES bounds calculation using SMILES strings directly.
     This uses the optimized C++ implementation with parallel processing.
@@ -383,7 +382,11 @@ def filter2_cpp(smiles_list:Iterable[str]) -> NDArray:
     numpy.ndarray
         Symmetric distance matrix where result[i,j] is the distance between molecules i and j
     """
-    return calculate_distances_symmetric(smiles_list)
+    symmetric_distance_matrix = calculate_symmetric_distance_matrix(smiles_list)
+    # we get a flattened list and now format it as a square numpy array
+    # symmetric_distance_matrix is expected to be a flat list or 1D numpy array of length n*n
+    n = int(np.sqrt(len(symmetric_distance_matrix)))
+    return np.array(symmetric_distance_matrix).reshape((n, n))
 
 if __name__ == "__main__":
     import sys
