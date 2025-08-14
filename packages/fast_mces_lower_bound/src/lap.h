@@ -1,12 +1,12 @@
 /*************** CONSTANTS  *******************/
 
-#define BIG 1.79769e+308 // max value for double
+#define BIG 3.402823e+38 // max value for float
 
 /*************** TYPES      *******************/
 
 typedef int row;
 typedef int col;
-typedef double cost;
+typedef float cost;
 
 /*************** FUNCTIONS  *******************/
 

@@ -2,14 +2,14 @@
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
 #include "cpp_filter.hpp"
-
+#include "lap.h"
 namespace nb = nanobind;
 
-std::vector<double> py_calculate_symmetric_distance_matrix(const std::vector<std::string>& smiles_list) {
+std::vector<cost> py_calculate_symmetric_distance_matrix(const std::vector<std::string>& smiles_list) {
     return calculate_symmetric_distance_matrix(smiles_list);
 }
 
-std::vector<double> py_calculate_distance_matrix(const std::vector<std::string>& smiles_list1, const std::vector<std::string>& smiles_list2) {
+std::vector<cost> py_calculate_distance_matrix(const std::vector<std::string>& smiles_list1, const std::vector<std::string>& smiles_list2) {
     return calculate_distance_matrix(smiles_list1, smiles_list2);
 }
 

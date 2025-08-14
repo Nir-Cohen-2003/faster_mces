@@ -21,12 +21,17 @@ execute_process(
 find_package(nanobind CONFIG REQUIRED)
 # now print whether nanobind was found, print anyway
 if(TARGET nanobind::nanobind)
-    message(STATUS "nanobind was found: nanobind::nanobind target is available.")
+message(STATUS "nanobind was found: nanobind::nanobind target is available.")
 else()
-    message(WARNING "nanobind was NOT found: nanobind::nanobind target is missing.")
+message(WARNING "nanobind was NOT found: nanobind::nanobind target is missing.")
 endif()
 
 
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
+elseif (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Ox")
+endif()
 # Manually set RDKit include and library paths
 # set(RDKIT_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/.pixi/envs/default/include/rdkit")
 # set(RDKIT_LIB_DIR "${CMAKE_SOURCE_DIR}/.pixi/envs/default/lib")
@@ -52,7 +57,7 @@ target_link_libraries(mces_lower_bound PRIVATE
     OpenMP::OpenMP_CXX
 )
 
-target_compile_definitions(mces_lower_bound PRIVATE USE_LAPJV)
+# target_compile_definitions(mces_lower_bound PRIVATE USE_LAPJV)
 
 install(TARGETS mces_lower_bound
     LIBRARY DESTINATION lib

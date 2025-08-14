@@ -6,6 +6,11 @@
         "string": "cpp",
         "string_view": "cpp",
         "ranges": "cpp",
-        "span": "cpp"
+        "span": "cpp",
+        "any": "cpp",
+        "rope": "cpp",
+        "slist": "cpp",
+        "stacktrace": "cpp",
+        "regex": "cpp"
     }
 }

@@ -10,21 +10,15 @@
 #include <set>
 #include "lap.h"
 
-double solve_lap(const std::vector<std::vector<double>>& cost_matrix) {
-    if (cost_matrix.empty() || cost_matrix[0].empty()) return 0.0;
-    size_t n = cost_matrix.size();
-    // lapjv expects a double** cost matrix
-    std::vector<double*> cost_ptrs(n);
-    std::vector<std::vector<double>> cost_copy(n, std::vector<double>(n, 0.0));
+cost solve_lap(const std::vector<cost>& cost_matrix_flat, size_t n) {
+    // cost_matrix_flat is row-major: cost_matrix_flat[i * n + j]
+    std::vector<cost*> cost_ptrs(n);
     for (size_t i = 0; i < n; ++i) {
-        for (size_t j = 0; j < n; ++j) {
-            cost_copy[i][j] = (i < cost_matrix.size() && j < cost_matrix[i].size()) ? cost_matrix[i][j] : 0.0;
-        }
-        cost_ptrs[i] = cost_copy[i].data();
+        cost_ptrs[i] = const_cast<cost*>(&cost_matrix_flat[i * n]);
     }
     std::vector<int> rowsol(n), colsol(n);
-    std::vector<double> u(n), v(n);
-    double lap_cost = lap(n, cost_ptrs.data(), rowsol.data(), colsol.data(), u.data(), v.data());
+    std::vector<cost> u(n), v(n);
+    cost lap_cost = lap(n, cost_ptrs.data(), rowsol.data(), colsol.data(), u.data(), v.data());
     return lap_cost;
 }
 
@@ -48,7 +42,7 @@ PrecomputedMol precompute_mol_data(const std::string& smiles) {
 
         for (const auto& neighbor : mol->atomNeighbors(atom)) {
             const RDKit::Bond* bond = mol->getBondBetweenAtoms(atom_idx, neighbor->getIdx());
-            double weight = bond->getBondTypeAsDouble();
+            cost weight = static_cast<cost>(bond->getBondTypeAsDouble());
             int neighbor_type = neighbor->getAtomicNum();
             atom_data.atom_weights[neighbor_type].push_back(weight);
             atom_data.total_weight += weight;
@@ -63,7 +57,7 @@ PrecomputedMol precompute_mol_data(const std::string& smiles) {
     return p_mol;
 }
 
-double node_cost(unsigned int node1_idx, const PrecomputedMol& mol1, unsigned int node2_idx, const PrecomputedMol& mol2) {
+cost node_cost(unsigned int node1_idx, const PrecomputedMol& mol1, unsigned int node2_idx, const PrecomputedMol& mol2) {
     const auto& weights1_map = mol1.atom_data_vec[node1_idx].atom_weights;
     const auto& weights2_map = mol2.atom_data_vec[node2_idx].atom_weights;
 
@@ -71,27 +65,27 @@ double node_cost(unsigned int node1_idx, const PrecomputedMol& mol1, unsigned in
     for (const auto& pair : weights1_map) all_atom_types.insert(pair.first);
     for (const auto& pair : weights2_map) all_atom_types.insert(pair.first);
 
-    double cost = 0.0;
+    cost cost_val = 0.0;
     for (int atom_type : all_atom_types) {
         auto it1 = weights1_map.find(atom_type);
         auto it2 = weights2_map.find(atom_type);
 
-        const std::vector<double>& w1 = (it1 != weights1_map.end()) ? it1->second : std::vector<double>();
-        const std::vector<double>& w2 = (it2 != weights2_map.end()) ? it2->second : std::vector<double>();
+        const std::vector<cost>& w1 = (it1 != weights1_map.end()) ? it1->second : std::vector<cost>();
+        const std::vector<cost>& w2 = (it2 != weights2_map.end()) ? it2->second : std::vector<cost>();
 
         size_t min_len = std::min(w1.size(), w2.size());
         for (size_t i = 0; i < min_len; ++i) {
-            cost += std::abs(w1[i] - w2[i]);
+            cost_val += std::abs(w1[i] - w2[i]);
         }
         
-        for (size_t i = min_len; i < w1.size(); ++i) cost += w1[i];
-        for (size_t i = min_len; i < w2.size(); ++i) cost += w2[i];
+        for (size_t i = min_len; i < w1.size(); ++i) cost_val += w1[i];
+        for (size_t i = min_len; i < w2.size(); ++i) cost_val += w2[i];
     }
-    return cost / 2.0;
+    return cost_val / 2.0;
 }
 
-double calculate_pair_distance(const PrecomputedMol& mol1, const PrecomputedMol& mol2) {
-    double total_cost = 0.0;
+cost calculate_pair_distance(const PrecomputedMol& mol1, const PrecomputedMol& mol2) {
+    cost total_cost = 0.0;
     
     std::set<int> all_types;
     for (const auto& pair : mol1.atom_types_to_indices) all_types.insert(pair.first);
@@ -116,91 +110,84 @@ double calculate_pair_distance(const PrecomputedMol& mol1, const PrecomputedMol&
         size_t n1 = nodes1.size();
         size_t n2 = nodes2.size();
         size_t max_size = std::max(n1, n2);
-        std::vector<std::vector<double>> cost_matrix(max_size, std::vector<double>(max_size, 0.0));
+        std::vector<cost> cost_matrix_flat(max_size * max_size, 0.0);
 
+        // Fill cost matrix
         for (size_t i = 0; i < n1; ++i) {
             for (size_t j = 0; j < n2; ++j) {
-                cost_matrix[i][j] = node_cost(nodes1[i], mol1, nodes2[j], mol2);
+                cost_matrix_flat[i * max_size + j] = node_cost(nodes1[i], mol1, nodes2[j], mol2);
             }
         }
-
         if (n1 < n2) {
             for (size_t i = n1; i < max_size; ++i) {
                 for (size_t j = 0; j < n2; ++j) {
-                    cost_matrix[i][j] = mol2.atom_data_vec[nodes2[j]].total_weight;
+                    cost_matrix_flat[i * max_size + j] = mol2.atom_data_vec[nodes2[j]].total_weight;
                 }
             }
         } else if (n2 < n1) {
             for (size_t i = 0; i < n1; ++i) {
                 for (size_t j = n2; j < max_size; ++j) {
-                    cost_matrix[i][j] = mol1.atom_data_vec[nodes1[i]].total_weight;
+                    cost_matrix_flat[i * max_size + j] = mol1.atom_data_vec[nodes1[i]].total_weight;
                 }
             }
         }
-        
-        total_cost += solve_lap(cost_matrix);
+
+        total_cost += solve_lap(cost_matrix_flat, max_size);
     }
     return total_cost;
 }
 
-std::vector<double> calculate_symmetric_distance_matrix(const std::vector<std::string>& smiles_list) {
+std::vector<cost> calculate_symmetric_distance_matrix(const std::vector<std::string>& smiles_list) {
     size_t n = smiles_list.size();
     std::vector<PrecomputedMol> precomputed_mols(n);
 
-    // Stage 1: Pre-computation (in parallel)
     #pragma omp parallel for schedule(static)
     for (size_t i = 0; i < n; ++i) {
-        // RDKit is not thread-safe for certain operations, but creating molecules
-        // from SMILES is generally safe. If issues arise, this may need a critical section.
         precomputed_mols[i] = precompute_mol_data(smiles_list[i]);
     }
 
-    // Stage 2: Pairwise distance calculation (also parallelized internally)
     return filter2_batch_symmetric(precomputed_mols);
 }
 
-std::vector<double> filter2_batch_symmetric(const std::vector<PrecomputedMol>& mols) {
+std::vector<cost> filter2_batch_symmetric(const std::vector<PrecomputedMol>& mols) {
     size_t n = mols.size();
-    std::vector<double> results(n * n, 0.0); // Initialize with 0
+    std::vector<cost> results(n * n, 0.0);
 
-        int error_count = 0;
+    int error_count = 0;
 
-        #pragma omp parallel for schedule(dynamic) reduction(+:error_count)
-        for (size_t i = 0; i < n; ++i) {
-            for (size_t j = i; j < n; ++j) {
-                if (i == j) {
-                    results[i * n + j] = 0.0;
-                    continue;
-                }
-                double dist = calculate_pair_distance(mols[i], mols[j]);
-                // Add bounds checking
-                if (std::isfinite(dist) && dist >= 0 && dist <= 10000.0) {
-                    results[i * n + j] = dist;
-                    results[j * n + i] = dist;
-                } else {
-                    // Handle invalid results or errors
-                    results[i * n + j] = 0.0;
-                    results[j * n + i] = 0.0;
-                    if (dist > 10000.0) {
-                        error_count++;
-                    }
+    #pragma omp parallel for schedule(dynamic) reduction(+:error_count)
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t j = i; j < n; ++j) {
+            if (i == j) {
+                results[i * n + j] = 0.0;
+                continue;
+            }
+            cost dist = calculate_pair_distance(mols[i], mols[j]);
+            if (std::isfinite(dist) && dist >= 0 && dist <= 10000.0) {
+                results[i * n + j] = dist;
+                results[j * n + i] = dist;
+            } else {
+                results[i * n + j] = 0.0;
+                results[j * n + i] = 0.0;
+                if (dist > 10000.0) {
+                    error_count++;
                 }
             }
         }
-        if (error_count > 0) {
-            std::cerr << "Warning: " << error_count << " pairwise distances exceeded 10000." << std::endl;
-        }
+    }
+    if (error_count > 0) {
+        std::cerr << "Warning: " << error_count << " pairwise distances exceeded 10000." << std::endl;
+    }
 
     return results;
 }
 
-std::vector<double> calculate_distance_matrix(const std::vector<std::string>& smiles_list1, const std::vector<std::string>& smiles_list2) {
+std::vector<cost> calculate_distance_matrix(const std::vector<std::string>& smiles_list1, const std::vector<std::string>& smiles_list2) {
     size_t n1 = smiles_list1.size();
     size_t n2 = smiles_list2.size();
     std::vector<PrecomputedMol> mols1(n1);
     std::vector<PrecomputedMol> mols2(n2);
 
-    // Precompute molecules (can parallelize if needed)
     #pragma omp parallel for schedule(static)
     for (size_t i = 0; i < n1; ++i) {
         mols1[i] = precompute_mol_data(smiles_list1[i]);
@@ -210,13 +197,13 @@ std::vector<double> calculate_distance_matrix(const std::vector<std::string>& sm
         mols2[j] = precompute_mol_data(smiles_list2[j]);
     }
 
-    std::vector<double> results(n1 * n2, 0.0);
+    std::vector<cost> results(n1 * n2, 0.0);
 
     int error_count = 0;
     #pragma omp parallel for schedule(dynamic) reduction(+:error_count)
     for (size_t i = 0; i < n1; ++i) {
         for (size_t j = 0; j < n2; ++j) {
-            double dist = calculate_pair_distance(mols1[i], mols2[j]);
+            cost dist = calculate_pair_distance(mols1[i], mols2[j]);
             if (std::isfinite(dist) && dist >= 0 && dist <= 10000.0) {
                 results[i * n2 + j] = dist;
             } else {

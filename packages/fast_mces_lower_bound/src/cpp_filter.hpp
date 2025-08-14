@@ -5,14 +5,15 @@
 #include <string>
 #include <map>
 #include <GraphMol/ROMol.h>
+#include "lap.h"
 // A map from an atom type (int) to a list of bond weights (doubles).
 // The list of weights is pre-sorted in descending order.
-using AtomWeightsMap = std::map<int, std::vector<double>>;
+using AtomWeightsMap = std::map<int, std::vector<cost>>;
 
 // Data for a single atom (node) needed for the cost calculation.
 struct AtomData {
     AtomWeightsMap atom_weights;
-    double total_weight;
+    cost total_weight;
 };
 
 // Holds all pre-computed information for a single molecule.
@@ -24,15 +25,15 @@ struct PrecomputedMol {
     std::vector<AtomData> atom_data_vec;
 };
 
-double solve_lap(const std::vector<std::vector<double>>& cost_matrix);
+cost solve_lap(const std::vector<std::vector<cost>>& cost_matrix);
 
 // This will be the single entry point from Cython.
-std::vector<double> calculate_symmetric_distance_matrix(const std::vector<std::string>& smiles_list);
+std::vector<cost> calculate_symmetric_distance_matrix(const std::vector<std::string>& smiles_list);
 
 // New function: computes lower bound MCES matrix between two lists (not symmetric)
-std::vector<double> calculate_distance_matrix(const std::vector<std::string>& smiles_list1, const std::vector<std::string>& smiles_list2);
+std::vector<cost> calculate_distance_matrix(const std::vector<std::string>& smiles_list1, const std::vector<std::string>& smiles_list2);
 
-std::vector<double> filter2_batch_symmetric(const std::vector<PrecomputedMol>& mols);
+std::vector<cost> filter2_batch_symmetric(const std::vector<PrecomputedMol>& mols);
 
 // Helper function to create a PrecomputedMol from a SMILES string.
 // This will be called from Cython.
