@@ -8,6 +8,7 @@ environments:
       linux-64:
       - conda: https://prefix.dev/conda-forge/linux-64/_libgcc_mutex-0.1-conda_forge.tar.bz2
       - conda: https://prefix.dev/conda-forge/linux-64/_openmp_mutex-4.5-2_gnu.tar.bz2
+      - conda: https://prefix.dev/conda-forge/noarch/_python_abi3_support-1.0-hd8ed1ab_2.conda
       - conda: https://prefix.dev/conda-forge/linux-64/binutils-2.44-h4852527_1.conda
       - conda: https://prefix.dev/conda-forge/linux-64/binutils_impl_linux-64-2.44-h4bf12b8_1.conda
       - conda: https://prefix.dev/conda-forge/linux-64/binutils_linux-64-2.44-h4852527_1.conda
@@ -19,6 +20,7 @@ environments:
       - conda: https://prefix.dev/conda-forge/linux-64/cairo-1.18.4-h3394656_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/cmake-4.1.0-hc85cc9f_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/conda-gcc-specs-14.3.0-hb991d5c_4.conda
+      - conda: https://prefix.dev/conda-forge/noarch/cpython-3.13.5-py313hd8ed1ab_102.conda
       - conda: https://prefix.dev/conda-forge/linux-64/cxx-compiler-1.11.0-hfcd1e18_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/eigen-3.4.0-h00ab1b0_0.conda
       - conda: https://prefix.dev/conda-forge/noarch/font-ttf-dejavu-sans-mono-2.37-hab24e00_0.tar.bz2
@@ -78,8 +80,11 @@ environments:
       - conda: https://prefix.dev/conda-forge/linux-64/openssl-3.5.2-h26f9b46_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/pcre2-10.45-hc749103_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/pixman-0.46.4-h54a6638_1.conda
+      - conda: https://prefix.dev/conda-forge/linux-64/polars-1.32.2-default_h9d415db_0.conda
+      - conda: https://prefix.dev/conda-forge/linux-64/polars-default-1.32.2-py39hf521cc8_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/pthread-stubs-0.4-hb9d3cd8_1002.conda
       - conda: https://prefix.dev/conda-forge/linux-64/python-3.13.5-hec9711d_102_cp313.conda
+      - conda: https://prefix.dev/conda-forge/noarch/python-gil-3.13.5-h4df99d1_102.conda
       - conda: https://prefix.dev/conda-forge/noarch/python_abi-3.13-8_cp313.conda
       - conda: https://prefix.dev/conda-forge/linux-64/readline-8.2-h8c095d6_2.conda
       - conda: https://prefix.dev/conda-forge/linux-64/rhash-1.4.6-hb9d3cd8_1.conda
@@ -115,6 +120,16 @@ packages:
   license_family: BSD
   size: 23621
   timestamp: 1650670423406
+- conda: https://prefix.dev/conda-forge/noarch/_python_abi3_support-1.0-hd8ed1ab_2.conda
+  sha256: a3967b937b9abf0f2a99f3173fa4630293979bd1644709d89580e7c62a544661
+  md5: aaa2a381ccc56eac91d63b6c1240312f
+  depends:
+  - cpython
+  - python-gil
+  license: MIT
+  license_family: MIT
+  size: 8191
+  timestamp: 1744137672556
 - conda: https://prefix.dev/conda-forge/linux-64/binutils-2.44-h4852527_1.conda
   sha256: 3feccd1dd61bc18e41548d015e65f731400aa3ffe65802bc22ad772052d5326c
   md5: 0fab3ce18775aba71131028a04c20dfe
@@ -249,6 +264,16 @@ packages:
   license_family: GPL
   size: 33272
   timestamp: 1753905153853
+- conda: https://prefix.dev/conda-forge/noarch/cpython-3.13.5-py313hd8ed1ab_102.conda
+  noarch: generic
+  sha256: 058c8156ff880b1180a36b94307baad91f9130d0e3019ad8c7ade035852016fb
+  md5: 0401f31e3c9e48cebf215472aa3e7104
+  depends:
+  - python >=3.13,<3.14.0a0
+  - python_abi * *_cp313
+  license: Python-2.0
+  size: 47560
+  timestamp: 1750062514868
 - conda: https://prefix.dev/conda-forge/linux-64/cxx-compiler-1.11.0-hfcd1e18_0.conda
   sha256: 3fcc97ae3e89c150401a50a4de58794ffc67b1ed0e1851468fcc376980201e25
   md5: 5da8c935dca9186673987f79cef0b2a5
@@ -277,11 +302,12 @@ packages:
   subdir: linux-64
   depends:
   - librdkit-dev >=2024.0.0
+  - polars
   - libstdcxx >=14
   - libgcc >=14
   - python_abi 3.13.* *_cp313
   input:
-    hash: 5be9d5ced61f7e8ef81f463f58fc8131878b250f106a519b72aa11c24257a965
+    hash: 0bed7600ced470ef546610d60b1086c0c15c050b8e9ce85f2b8b539001089100
     globs: []
 - conda: https://prefix.dev/conda-forge/noarch/font-ttf-dejavu-sans-mono-2.37-hab24e00_0.tar.bz2
   sha256: 58d7f40d2940dd0a8aa28651239adbf5613254df0f75789919c4e6762054403b
@@ -901,6 +927,45 @@ packages:
   license_family: MIT
   size: 450960
   timestamp: 1754665235234
+- conda: https://prefix.dev/conda-forge/linux-64/polars-1.32.2-default_h9d415db_0.conda
+  sha256: 661972717bdd43e2295cbff8de5f26ce7fc3318cec18c19b61337d74b8bb7334
+  md5: c4a269eaca7ae95b722cba331c904182
+  depends:
+  - polars-default ==1.32.2 py39hf521cc8_0
+  license: MIT
+  license_family: MIT
+  size: 5722
+  timestamp: 1754926844989
+- conda: https://prefix.dev/conda-forge/linux-64/polars-default-1.32.2-py39hf521cc8_0.conda
+  noarch: python
+  sha256: 7a7874840ed46a5a1064903e7856692121dfd42310b57d76ef687222e7572ea0
+  md5: 13503aa1030bf6e4b468d12965f09bd2
+  depends:
+  - python
+  - libgcc >=14
+  - __glibc >=2.17,<3.0.a0
+  - libstdcxx >=14
+  - libgcc >=14
+  - _python_abi3_support 1.*
+  - cpython >=3.9
+  constrains:
+  - numpy >=1.16.0
+  - pyarrow >=7.0.0
+  - fastexcel >=0.9
+  - openpyxl >=3.0.0
+  - xlsx2csv >=0.8.0
+  - connectorx >=0.3.2
+  - deltalake >=1.0.0
+  - pyiceberg >=0.7.1
+  - altair >=5.4.0
+  - great_tables >=0.8.0
+  - polars-lts-cpu <0.0.0a0
+  - polars-u64-idx <0.0.0a0
+  - __glibc >=2.17
+  license: MIT
+  license_family: MIT
+  size: 31328605
+  timestamp: 1754926844989
 - conda: https://prefix.dev/conda-forge/linux-64/pthread-stubs-0.4-hb9d3cd8_1002.conda
   sha256: 9c88f8c64590e9567c6c80823f0328e58d3b1efb0e1c539c0315ceca764e0973
   md5: b3c17d95b5a10c6e64a21fa17573e70e
@@ -937,6 +1002,15 @@ packages:
   size: 33273132
   timestamp: 1750064035176
   python_site_packages_path: lib/python3.13/site-packages
+- conda: https://prefix.dev/conda-forge/noarch/python-gil-3.13.5-h4df99d1_102.conda
+  sha256: ac6cf618100c2e0cad1cabfe2c44bf4a944aa07bb1dc43abff73373351a7d079
+  md5: 2eabcede0db21acee23c181db58b4128
+  depends:
+  - cpython 3.13.5.*
+  - python_abi * *_cp313
+  license: Python-2.0
+  size: 47572
+  timestamp: 1750062593102
 - conda: https://prefix.dev/conda-forge/noarch/python_abi-3.13-8_cp313.conda
   build_number: 8
   sha256: 210bffe7b121e651419cb196a2a63687b087497595c9be9d20ebe97dd06060a7

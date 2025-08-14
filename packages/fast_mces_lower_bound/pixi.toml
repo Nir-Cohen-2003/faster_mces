@@ -8,6 +8,7 @@ preview = ["pixi-build"]
 librdkit-dev = ">=2024.0.0"
 fast_mces_lower_bound = { path = "." }
 python = "*"
+polars = "*"
 cmake = "*"
 ninja = "*"
 nanobind = ">=2.4.0"
@@ -35,6 +36,8 @@ configure = { cmd = [
 build = { cmd = ["ninja", "-C", ".build"], depends-on = ["configure"] }
 install = { cmd = ["cp", "-r", ".build/fast_mces_lower_bound*.so", "."], depends-on = ["build"] }
 start = { cmd = "python -c 'import fast_mces_lower_bound'"}#, depends-on = ["install"] }
+test = "python tests/test.py"
+benchmark = "python tests/benchmark.py"
 
 [package]
 name = "fast_mces_lower_bound"
@@ -50,8 +53,11 @@ channels = [
 ]
 [package.build.configuration]
 # This will run cmake, build and install the package
-extra-args = ["-DCMAKE_BUILD_TYPE=Release"] 
-
+extra-args = [
+  "-DCMAKE_BUILD_TYPE=Release",
+  "-DRDKIT_INCLUDE_DIR=${PREFIX}/include/rdkit",
+  "-DRDKIT_LIB_DIR=${PREFIX}/lib"
+]
 [package.build-dependencies]
 cmake = "*"
 ninja = "*"
@@ -77,3 +83,4 @@ eigen = "*"
 # The runtime dependencies of the package
 # rdkit = ">=2024.0.0"
 librdkit-dev = ">=2024.0.0"
+polars = "*"

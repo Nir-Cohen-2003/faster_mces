@@ -3,3 +3,5 @@
 !.pixi/config.toml
 **/.build/
 **.so
+**.conda
+packages/fast_mces_lower_bound/tests/dsstox_smiles_medium.csv

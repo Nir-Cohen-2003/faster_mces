@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 find_package(Boost REQUIRED COMPONENTS system serialization iostreams)
 find_package(Eigen3 REQUIRED)
 find_package(Python 3.8 COMPONENTS Interpreter Development.Module REQUIRED)
+find_package(OpenMP REQUIRED)
 
 execute_process(
   COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
@@ -27,9 +28,10 @@ endif()
 
 
 # Manually set RDKit include and library paths
-set(RDKIT_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/.pixi/envs/default/include/rdkit")
-set(RDKIT_LIB_DIR "${CMAKE_SOURCE_DIR}/.pixi/envs/default/lib")
-
+# set(RDKIT_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/.pixi/envs/default/include/rdkit")
+# set(RDKIT_LIB_DIR "${CMAKE_SOURCE_DIR}/.pixi/envs/default/lib")
+set(RDKIT_INCLUDE_DIR "${RDKIT_INCLUDE_DIR}" CACHE PATH "RDKit include dir")
+set(RDKIT_LIB_DIR "${RDKIT_LIB_DIR}" CACHE PATH "RDKit lib dir")
 add_library(mces_lower_bound src/cpp_filter.cpp src/lap.cpp)
 
 target_include_directories(mces_lower_bound PRIVATE
@@ -47,6 +49,7 @@ target_link_libraries(mces_lower_bound PRIVATE
     RDKitSmilesParse
     Eigen3::Eigen
     ${Boost_LIBRARIES}
+    OpenMP::OpenMP_CXX
 )
 
 target_compile_definitions(mces_lower_bound PRIVATE USE_LAPJV)
@@ -58,7 +61,7 @@ install(TARGETS mces_lower_bound
 )
 install(FILES src/cpp_filter.hpp DESTINATION include/fast_mces_lower_bound)
 nanobind_add_module(fast_mces_lower_bound src/pybind.cpp)
-target_link_libraries(fast_mces_lower_bound PRIVATE mces_lower_bound)
+target_link_libraries(fast_mces_lower_bound PRIVATE mces_lower_bound OpenMP::OpenMP_CXX)
 target_include_directories(fast_mces_lower_bound PRIVATE
     ${Python_INCLUDE_DIRS}
     ${RDKIT_INCLUDE_DIR}

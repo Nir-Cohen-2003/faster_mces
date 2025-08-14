@@ -1,1 +1,0 @@
-file:///home/analytit_admin/dev/MS_utils/setup_2.py
