@@ -1,0 +1,18 @@
+
+[project]
+name = "mces_splitting"
+version = "0.1.0"
+
+requires-python = ">=3.12"
+dependencies = [
+    "rdkit>=2024.0.0",
+    "polars>=1.32.0,<2",
+    "numpy>=2.3.2,<3",
+    "scipy>=1.16.0,<2",
+    "networkx>=3.5,<4"
+]
+
+
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
