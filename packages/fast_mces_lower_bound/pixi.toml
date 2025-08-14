@@ -18,6 +18,7 @@ eigen = "*"
 
 [tasks]
 # Configure CMake
+clean = { cmd = ["bash", "-c", "[ -d ./.build ] && rm -rf ./.build || true"] }
 configure = { cmd = [
     "cmake",
     "-G",
@@ -27,13 +28,12 @@ configure = { cmd = [
     "-B",
     ".build",
     "-DCMAKE_BUILD_TYPE=Release",
-] }
+], depends-on = ["clean"]}
 
 # Build the project (depends on configure)
 build = { cmd = ["ninja", "-C", ".build"], depends-on = ["configure"] }
-
-# Start task: import the Python module (depends on build)
-start = { cmd = "python -c 'import fast_mces_lower_bound'", depends-on = ["build"] }
+install = { cmd = ["cp", "-r", ".build/fast_mces_lower_bound*.so", "."], depends-on = ["build"] }
+start = { cmd = "python -c 'import fast_mces_lower_bound'", depends-on = ["install"] }
 
 [package]
 name = "fast_mces_lower_bound"
