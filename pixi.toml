@@ -7,15 +7,17 @@ version = "0.1.0"
 preview = ["pixi-build"]
 
 [tasks]
-
+test = "python src/mces/test.py"
 [dependencies]
 rdkit = ">=2024.0.0"
 polars = ">=1.32.0,<2"
 numpy = ">=2.3.2,<3"
 scipy = ">=1.16.0,<2"
 networkx = ">=3.5,<4"
-rustworkx = ">=0.16.0,<0.17"
-
+fast_mces_lower_bound = { path = "packages/fast_mces_lower_bound" }
+[package]
+name = "mces_splitting"
+version = "0.1.0"
 [package.build] 
 backend = { name = "pixi-build-python", version = "==0.3.2" }
 
