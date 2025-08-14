@@ -7,8 +7,8 @@ find_package(Boost REQUIRED COMPONENTS system serialization iostreams)
 find_package(Eigen3 REQUIRED)
 
 # Manually set RDKit include and library paths
-set(RDKIT_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/../test_rdkit/.pixi/envs/default/include/rdkit")
-set(RDKIT_LIB_DIR "${CMAKE_SOURCE_DIR}/../test_rdkit/.pixi/envs/default/lib")
+set(RDKIT_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/.pixi/envs/default/include/rdkit")
+set(RDKIT_LIB_DIR "${CMAKE_SOURCE_DIR}/.pixi/envs/default/lib")
 
 add_library(mces_lower_bound src/cpp_filter.cpp)
 
