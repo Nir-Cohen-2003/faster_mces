@@ -91,12 +91,15 @@ cost calculate_pair_distance(const PrecomputedMol& mol1, const PrecomputedMol& m
     for (const auto& pair : mol1.atom_types_to_indices) all_types.insert(pair.first);
     for (const auto& pair : mol2.atom_types_to_indices) all_types.insert(pair.first);
 
+    // Static empty vectors to avoid repeated allocations
+    static const std::vector<unsigned int> empty_nodes_vec;
+
     for (int atom_type : all_types) {
         auto it1 = mol1.atom_types_to_indices.find(atom_type);
         auto it2 = mol2.atom_types_to_indices.find(atom_type);
 
-        const std::vector<unsigned int>& nodes1 = (it1 != mol1.atom_types_to_indices.end()) ? it1->second : std::vector<unsigned int>();
-        const std::vector<unsigned int>& nodes2 = (it2 != mol2.atom_types_to_indices.end()) ? it2->second : std::vector<unsigned int>();
+        const std::vector<unsigned int>& nodes1 = (it1 != mol1.atom_types_to_indices.end()) ? it1->second : empty_nodes_vec;
+        const std::vector<unsigned int>& nodes2 = (it2 != mol2.atom_types_to_indices.end()) ? it2->second : empty_nodes_vec;
 
         if (nodes1.empty()) {
             for (unsigned int n2_idx : nodes2) total_cost += mol2.atom_data_vec[n2_idx].total_weight;
@@ -169,9 +172,9 @@ std::vector<cost> filter2_batch_symmetric(const std::vector<PrecomputedMol>& mol
             } else {
                 results[i * n + j] = 0.0;
                 results[j * n + i] = 0.0;
-                if (dist > 10000.0) {
-                    error_count++;
-                }
+                
+                error_count++;
+                
             }
         }
     }
@@ -208,9 +211,7 @@ std::vector<cost> calculate_distance_matrix(const std::vector<std::string>& smil
                 results[i * n2 + j] = dist;
             } else {
                 results[i * n2 + j] = 0.0;
-                if (dist > 10000.0) {
-                    error_count++;
-                }
+                error_count++;
             }
         }
     }

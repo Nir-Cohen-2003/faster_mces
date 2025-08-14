@@ -11,6 +11,9 @@
         "rope": "cpp",
         "slist": "cpp",
         "stacktrace": "cpp",
-        "regex": "cpp"
+        "regex": "cpp",
+        "chrono": "cpp",
+        "unordered_map": "cpp",
+        "unordered_set": "cpp"
     }
 }

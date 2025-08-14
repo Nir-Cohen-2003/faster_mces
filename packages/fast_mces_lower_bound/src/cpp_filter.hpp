@@ -17,7 +17,6 @@ struct AtomData {
 };
 
 // Holds all pre-computed information for a single molecule.
-// This is the efficient representation you requested.
 struct PrecomputedMol {
     // Maps an atom type (int) to a list of atom indices of that type.
     std::map<int, std::vector<unsigned int>> atom_types_to_indices;
