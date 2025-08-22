@@ -368,6 +368,41 @@ std::vector<cost> calculate_distance_matrix(const std::vector<std::string>& smil
     g_precompute_count.fetch_add(static_cast<long long>(n2));
 #endif
 
+    // --- Build global atom-type ordering and flat features for all molecules once ---
+    {
+        std::map<int, size_t> max_counts_map;
+        auto update_max_counts = [&max_counts_map](const PrecomputedMol& pm) {
+            for (size_t a = 0; a < pm.atom_data_vec.size(); ++a) {
+                for (const auto& p : pm.atom_data_vec[a].atom_weights) {
+                    int atype = p.first;
+                    max_counts_map[atype] = std::max(max_counts_map[atype], p.second.size());
+                }
+            }
+        };
+        for (const auto& pm : mols1) update_max_counts(pm);
+        for (const auto& pm : mols2) update_max_counts(pm);
+
+        std::vector<int> global_types;
+        std::vector<size_t> max_counts_per_type;
+        global_types.reserve(max_counts_map.size());
+        max_counts_per_type.reserve(max_counts_map.size());
+        for (const auto& p : max_counts_map) {
+            global_types.push_back(p.first);
+            max_counts_per_type.push_back(p.second);
+        }
+
+        // build dense flat features per molecule (parallel) for both sets
+        #pragma omp parallel for schedule(static)
+        for (size_t i = 0; i < n1; ++i) {
+            build_flat_features_for_mol(mols1[i], global_types, max_counts_per_type);
+        }
+        #pragma omp parallel for schedule(static)
+        for (size_t j = 0; j < n2; ++j) {
+            build_flat_features_for_mol(mols2[j], global_types, max_counts_per_type);
+        }
+    }
+    // --- End build flat features ---
+
     std::vector<cost> results(n1 * n2, 0.0);
 
 #if FAST_MCES_ERROR_COUNT
