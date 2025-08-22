@@ -31,7 +31,7 @@ extra-args = [
   "-DCMAKE_BUILD_TYPE=Release",
   "-DRDKIT_INCLUDE_DIR=${PREFIX}/include/rdkit",
   "-DRDKIT_LIB_DIR=${PREFIX}/lib",
-  "-DFAST_MCES_PROFILE=1"
+  # "-DFAST_MCES_PROFILE=0"
 ]
 
 

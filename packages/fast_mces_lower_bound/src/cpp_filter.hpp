@@ -22,9 +22,11 @@ struct PrecomputedMol {
     std::map<int, std::vector<unsigned int>> atom_types_to_indices;
     // A vector of data for each atom, indexed by the atom's original index.
     std::vector<AtomData> atom_data_vec;
+    std::vector<std::vector<cost>> flat_features;
+
 };
 
-cost solve_lap(const std::vector<std::vector<cost>>& cost_matrix);
+cost solve_lap(const std::vector<cost>& cost_matrix_flat, size_t n);
 
 // This will be the single entry point from Cython.
 std::vector<cost> calculate_symmetric_distance_matrix(const std::vector<std::string>& smiles_list);
@@ -37,5 +39,7 @@ std::vector<cost> filter2_batch_symmetric(const std::vector<PrecomputedMol>& mol
 // Helper function to create a PrecomputedMol from a SMILES string.
 // This will be called from Cython.
 PrecomputedMol precompute_mol_data(const std::string& smiles);
+
+cost calculate_pair_distance(const PrecomputedMol& mol1, const PrecomputedMol& mol2);
 
 #endif // CPP_FILTER_HPP
