@@ -3,6 +3,17 @@ project(mces LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
+# Add options so -DFAST_MCES_PROFILE=1 passed to cmake sets the variable
+option(FAST_MCES_PROFILE "Enable profiling code" OFF)
+option(FAST_MCES_ERROR_COUNT "Enable error counting" OFF)
+
+if(FAST_MCES_PROFILE)
+  message(STATUS "FAST_MCES_PROFILE enabled")
+endif()
+if(FAST_MCES_ERROR_COUNT)
+  message(STATUS "FAST_MCES_ERROR_COUNT enabled")
+endif()
+
 find_package(Boost REQUIRED COMPONENTS system serialization iostreams)
 # find_package(Eigen3 REQUIRED)
 find_package(Python 3.8 COMPONENTS Interpreter Development.Module REQUIRED)
@@ -39,6 +50,14 @@ set(RDKIT_INCLUDE_DIR "${RDKIT_INCLUDE_DIR}" CACHE PATH "RDKit include dir")
 set(RDKIT_LIB_DIR "${RDKIT_LIB_DIR}" CACHE PATH "RDKit lib dir")
 add_library(mces_lower_bound src/cpp_filter.cpp src/lap.cpp)
 
+# propagate compile-time flags to the target(s)
+if(FAST_MCES_PROFILE)
+  target_compile_definitions(mces_lower_bound PRIVATE FAST_MCES_PROFILE=1)
+endif()
+if(FAST_MCES_ERROR_COUNT)
+  target_compile_definitions(mces_lower_bound PRIVATE FAST_MCES_ERROR_COUNT=1)
+endif()
+
 target_include_directories(mces_lower_bound PRIVATE
     ${RDKIT_INCLUDE_DIR}
     ${Boost_INCLUDE_DIRS}
@@ -67,6 +86,15 @@ install(TARGETS mces_lower_bound
 install(FILES src/cpp_filter.hpp DESTINATION include/fast_mces_lower_bound)
 nanobind_add_module(fast_mces_lower_bound src/pybind.cpp)
 target_link_libraries(fast_mces_lower_bound PRIVATE mces_lower_bound OpenMP::OpenMP_CXX)
+
+# also ensure module target gets same defs if needed
+if(FAST_MCES_PROFILE)
+  target_compile_definitions(fast_mces_lower_bound PRIVATE FAST_MCES_PROFILE=1)
+endif()
+if(FAST_MCES_ERROR_COUNT)
+  target_compile_definitions(fast_mces_lower_bound PRIVATE FAST_MCES_ERROR_COUNT=1)
+endif()
+
 target_include_directories(fast_mces_lower_bound PRIVATE
     ${Python_INCLUDE_DIRS}
     ${RDKIT_INCLUDE_DIR}

@@ -5,7 +5,7 @@ preview = ["pixi-build"]
 
 
 [dependencies]
-fast_mces_lower_bound = { path = "." }
+fast_mces_lower_bound = { path = "."}
 python = "*"
 numpy = "*"
 polars = "*"
@@ -16,22 +16,22 @@ benchmark = "python tests/benchmark.py"
 
 [package]
 name = "fast_mces_lower_bound"
-version = "0.1.0"
+version = "1.0.0"
 authors = ["Nir Cohen"]
 
 [package.build]
-backend = { name = "pixi-build-cmake", version = "*" }
-channels = [
+backend = { name = "pixi-build-cmake", version = "*", channels = [
   "https://prefix.dev/pixi-build-backends",
   "https://prefix.dev/conda-forge",
   "conda-forge",
-]
-[package.build.configuration]
+]}
+[package.build.config]
 # The rdkit args are needed, since cmake wasn't able to find the rdkit paths by itself, and needs them to be given 
 extra-args = [
   "-DCMAKE_BUILD_TYPE=Release",
   "-DRDKIT_INCLUDE_DIR=${PREFIX}/include/rdkit",
-  "-DRDKIT_LIB_DIR=${PREFIX}/lib"
+  "-DRDKIT_LIB_DIR=${PREFIX}/lib",
+  "-DFAST_MCES_PROFILE=1"
 ]
 
 
@@ -42,6 +42,12 @@ python = "*"
 librdkit-dev = ">=2024.0.0"
 boost-cpp = "*"
 
+[package.build-dependencies]#these are necessery for the nanobind stuff to work
+cmake = "*"
+nanobind = ">=2.4.0"
+python = "*"
+librdkit-dev = ">=2024.0.0"
+boost-cpp = "*"
 [package.run-dependencies]
 # The runtime dependencies of the package
 librdkit-dev = ">=2024.0.0"

@@ -9,6 +9,24 @@
 #include <stdexcept>
 #include <set>
 #include "lap.h"
+#include <chrono>
+#include <atomic>
+
+#ifndef FAST_MCES_PROFILE
+#define FAST_MCES_PROFILE 0
+#endif
+
+#ifndef FAST_MCES_ERROR_COUNT
+#define FAST_MCES_ERROR_COUNT 0
+#endif
+
+#if FAST_MCES_PROFILE
+static std::atomic<long long> g_precompute_time_ns{0};
+static std::atomic<long long> g_pair_fill_time_ns{0};
+static std::atomic<long long> g_pair_solve_time_ns{0};
+static std::atomic<long long> g_precompute_count{0};
+static std::atomic<long long> g_pair_count{0};
+#endif
 
 cost solve_lap(const std::vector<cost>& cost_matrix_flat, size_t n) {
     // cost_matrix_flat is row-major: cost_matrix_flat[i * n + j]
@@ -94,6 +112,11 @@ cost calculate_pair_distance(const PrecomputedMol& mol1, const PrecomputedMol& m
     // Static empty vectors to avoid repeated allocations
     static const std::vector<unsigned int> empty_nodes_vec;
 
+#if FAST_MCES_PROFILE
+    long long local_fill_ns = 0;
+    long long local_solve_ns = 0;
+#endif
+
     for (int atom_type : all_types) {
         auto it1 = mol1.atom_types_to_indices.find(atom_type);
         auto it2 = mol2.atom_types_to_indices.find(atom_type);
@@ -116,6 +139,9 @@ cost calculate_pair_distance(const PrecomputedMol& mol1, const PrecomputedMol& m
         std::vector<cost> cost_matrix_flat(max_size * max_size, 0.0);
 
         // Fill cost matrix
+#if FAST_MCES_PROFILE
+        auto fill_start = std::chrono::steady_clock::now();
+#endif
         for (size_t i = 0; i < n1; ++i) {
             for (size_t j = 0; j < n2; ++j) {
                 cost_matrix_flat[i * max_size + j] = node_cost(nodes1[i], mol1, nodes2[j], mol2);
@@ -134,9 +160,28 @@ cost calculate_pair_distance(const PrecomputedMol& mol1, const PrecomputedMol& m
                 }
             }
         }
+#if FAST_MCES_PROFILE
+        auto fill_end = std::chrono::steady_clock::now();
+        local_fill_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(fill_end - fill_start).count();
+#endif
 
+        // Solve LAP for this block
+#if FAST_MCES_PROFILE
+        auto solve_start = std::chrono::steady_clock::now();
+#endif
         total_cost += solve_lap(cost_matrix_flat, max_size);
+#if FAST_MCES_PROFILE
+        auto solve_end = std::chrono::steady_clock::now();
+        local_solve_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(solve_end - solve_start).count();
+#endif
     }
+
+#if FAST_MCES_PROFILE
+    g_pair_fill_time_ns.fetch_add(local_fill_ns);
+    g_pair_solve_time_ns.fetch_add(local_solve_ns);
+    g_pair_count.fetch_add(1);
+#endif
+
     return total_cost;
 }
 
@@ -144,10 +189,19 @@ std::vector<cost> calculate_symmetric_distance_matrix(const std::vector<std::str
     size_t n = smiles_list.size();
     std::vector<PrecomputedMol> precomputed_mols(n);
 
+#if FAST_MCES_PROFILE
+    auto t0 = std::chrono::steady_clock::now();
+#endif
     #pragma omp parallel for schedule(static)
     for (size_t i = 0; i < n; ++i) {
         precomputed_mols[i] = precompute_mol_data(smiles_list[i]);
     }
+#if FAST_MCES_PROFILE
+    auto t1 = std::chrono::steady_clock::now();
+    long long ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    g_precompute_time_ns.fetch_add(ns);
+    g_precompute_count.fetch_add(static_cast<long long>(n));
+#endif
 
     return filter2_batch_symmetric(precomputed_mols);
 }
@@ -156,9 +210,12 @@ std::vector<cost> filter2_batch_symmetric(const std::vector<PrecomputedMol>& mol
     size_t n = mols.size();
     std::vector<cost> results(n * n, 0.0);
 
+#if FAST_MCES_ERROR_COUNT
     int error_count = 0;
-
     #pragma omp parallel for schedule(dynamic) reduction(+:error_count)
+#else
+    #pragma omp parallel for schedule(dynamic)
+#endif
     for (size_t i = 0; i < n; ++i) {
         for (size_t j = i; j < n; ++j) {
             if (i == j) {
@@ -172,15 +229,34 @@ std::vector<cost> filter2_batch_symmetric(const std::vector<PrecomputedMol>& mol
             } else {
                 results[i * n + j] = 0.0;
                 results[j * n + i] = 0.0;
-                
+#if FAST_MCES_ERROR_COUNT
                 error_count++;
-                
+#endif
             }
         }
     }
+#if FAST_MCES_ERROR_COUNT
     if (error_count > 0) {
         std::cerr << "Warning: " << error_count << " pairwise distances exceeded 10000." << std::endl;
     }
+#endif
+
+#if FAST_MCES_PROFILE
+    long long pre_ns = g_precompute_time_ns.load();
+    long long fill_ns = g_pair_fill_time_ns.load();
+    long long solve_ns = g_pair_solve_time_ns.load();
+    long long pre_count = g_precompute_count.load();
+    long long pair_count = g_pair_count.load();
+    std::cerr << "[PROFILE] precompute total: " << (pre_ns / 1e6) << " ms"
+              << " (molecules: " << pre_count << ", avg per mol: " << (pre_count? (pre_ns / 1e6 / pre_count) : 0) << " ms)"
+              << std::endl;
+    std::cerr << "[PROFILE] pair fill total: " << (fill_ns / 1e6) << " ms"
+              << " (pairs: " << pair_count << ", avg fill per pair: " << (pair_count? (fill_ns / 1e6 / pair_count) : 0) << " ms)"
+              << std::endl;
+    std::cerr << "[PROFILE] pair solve total: " << (solve_ns / 1e6) << " ms"
+              << " (pairs: " << pair_count << ", avg solve per pair: " << (pair_count? (solve_ns / 1e6 / pair_count) : 0) << " ms)"
+              << std::endl;
+#endif
 
     return results;
 }
@@ -191,19 +267,40 @@ std::vector<cost> calculate_distance_matrix(const std::vector<std::string>& smil
     std::vector<PrecomputedMol> mols1(n1);
     std::vector<PrecomputedMol> mols2(n2);
 
+#if FAST_MCES_PROFILE
+    auto t0 = std::chrono::steady_clock::now();
+#endif
     #pragma omp parallel for schedule(static)
     for (size_t i = 0; i < n1; ++i) {
         mols1[i] = precompute_mol_data(smiles_list1[i]);
     }
+#if FAST_MCES_PROFILE
+    auto t1 = std::chrono::steady_clock::now();
+    g_precompute_time_ns.fetch_add(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+    g_precompute_count.fetch_add(static_cast<long long>(n1));
+#endif
+
+#if FAST_MCES_PROFILE
+    auto t2 = std::chrono::steady_clock::now();
+#endif
     #pragma omp parallel for schedule(static)
     for (size_t j = 0; j < n2; ++j) {
         mols2[j] = precompute_mol_data(smiles_list2[j]);
     }
+#if FAST_MCES_PROFILE
+    auto t3 = std::chrono::steady_clock::now();
+    g_precompute_time_ns.fetch_add(std::chrono::duration_cast<std::chrono::nanoseconds>(t3 - t2).count());
+    g_precompute_count.fetch_add(static_cast<long long>(n2));
+#endif
 
     std::vector<cost> results(n1 * n2, 0.0);
 
+#if FAST_MCES_ERROR_COUNT
     int error_count = 0;
     #pragma omp parallel for schedule(dynamic) reduction(+:error_count)
+#else
+    #pragma omp parallel for schedule(dynamic)
+#endif
     for (size_t i = 0; i < n1; ++i) {
         for (size_t j = 0; j < n2; ++j) {
             cost dist = calculate_pair_distance(mols1[i], mols2[j]);
@@ -211,13 +308,34 @@ std::vector<cost> calculate_distance_matrix(const std::vector<std::string>& smil
                 results[i * n2 + j] = dist;
             } else {
                 results[i * n2 + j] = 0.0;
+#if FAST_MCES_ERROR_COUNT
                 error_count++;
+#endif
             }
         }
     }
+#if FAST_MCES_ERROR_COUNT
     if (error_count > 0) {
         std::cerr << "Warning: " << error_count << " pairwise distances exceeded 10000." << std::endl;
     }
+#endif
+
+#if FAST_MCES_PROFILE
+    long long pre_ns = g_precompute_time_ns.load();
+    long long fill_ns = g_pair_fill_time_ns.load();
+    long long solve_ns = g_pair_solve_time_ns.load();
+    long long pre_count = g_precompute_count.load();
+    long long pair_count = g_pair_count.load();
+    std::cerr << "[PROFILE] precompute total: " << (pre_ns / 1e6) << " ms"
+              << " (molecules: " << pre_count << ", avg per mol: " << (pre_count? (pre_ns / 1e6 / pre_count) : 0) << " ms)"
+              << std::endl;
+    std::cerr << "[PROFILE] pair fill total: " << (fill_ns / 1e6) << " ms"
+              << " (pairs: " << pair_count << ", avg fill per pair: " << (pair_count? (fill_ns / 1e6 / pair_count) : 0) << " ms)"
+              << std::endl;
+    std::cerr << "[PROFILE] pair solve total: " << (solve_ns / 1e6) << " ms"
+              << " (pairs: " << pair_count << ", avg solve per pair: " << (pair_count? (solve_ns / 1e6 / pair_count) : 0) << " ms)"
+              << std::endl;
+#endif
 
     return results;
 }
