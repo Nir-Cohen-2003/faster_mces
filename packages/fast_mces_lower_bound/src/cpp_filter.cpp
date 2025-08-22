@@ -78,32 +78,32 @@ PrecomputedMol precompute_mol_data(const std::string& smiles) {
 static const std::vector<cost> kEmptyCostVec;
 
 // Replace node_cost internals to avoid temporaries
-cost node_cost(unsigned int node1_idx, const PrecomputedMol& mol1, unsigned int node2_idx, const PrecomputedMol& mol2) {
-    const auto& weights1_map = mol1.atom_data_vec[node1_idx].atom_weights;
-    const auto& weights2_map = mol2.atom_data_vec[node2_idx].atom_weights;
-
-    std::set<int> all_atom_types;
-    for (const auto& pair : weights1_map) all_atom_types.insert(pair.first);
-    for (const auto& pair : weights2_map) all_atom_types.insert(pair.first);
-
-    cost cost_val = 0.0;
-    for (int atom_type : all_atom_types) {
-        auto it1 = weights1_map.find(atom_type);
-        auto it2 = weights2_map.find(atom_type);
-
-        const std::vector<cost>* w1 = (it1 != weights1_map.end()) ? &it1->second : &kEmptyCostVec;
-        const std::vector<cost>* w2 = (it2 != weights2_map.end()) ? &it2->second : &kEmptyCostVec;
-
-        size_t min_len = std::min(w1->size(), w2->size());
-        for (size_t i = 0; i < min_len; ++i) {
-            cost_val += std::abs((*w1)[i] - (*w2)[i]);
-        }
-
-        for (size_t i = min_len; i < w1->size(); ++i) cost_val += (*w1)[i];
-        for (size_t i = min_len; i < w2->size(); ++i) cost_val += (*w2)[i];
-    }
-    return cost_val / 2.0;
-}
+// cost node_cost(unsigned int node1_idx, const PrecomputedMol& mol1, unsigned int node2_idx, const PrecomputedMol& mol2) {
+//     const auto& weights1_map = mol1.atom_data_vec[node1_idx].atom_weights;
+//     const auto& weights2_map = mol2.atom_data_vec[node2_idx].atom_weights;
+//
+//     std::set<int> all_atom_types;
+//     for (const auto& pair : weights1_map) all_atom_types.insert(pair.first);
+//     for (const auto& pair : weights2_map) all_atom_types.insert(pair.first);
+//
+//     cost cost_val = 0.0;
+//     for (int atom_type : all_atom_types) {
+//         auto it1 = weights1_map.find(atom_type);
+//         auto it2 = weights2_map.find(atom_type);
+//
+//         const std::vector<cost>* w1 = (it1 != weights1_map.end()) ? &it1->second : &kEmptyCostVec;
+//         const std::vector<cost>* w2 = (it2 != weights2_map.end()) ? &it2->second : &kEmptyCostVec;
+//
+//         size_t min_len = std::min(w1->size(), w2->size());
+//         for (size_t i = 0; i < min_len; ++i) {
+//             cost_val += std::abs((*w1)[i] - (*w2)[i]);
+//         }
+//
+//         for (size_t i = min_len; i < w1->size(); ++i) cost_val += (*w1)[i];
+//         for (size_t i = min_len; i < w2->size(); ++i) cost_val += (*w2)[i];
+//     }
+//     return cost_val / 2.0;
+// }
 
 // New helper: build dense flat features for one molecule given global ordering and per-type maxima
 static void build_flat_features_for_mol(PrecomputedMol& pmol,
@@ -190,91 +190,10 @@ std::vector<cost> calculate_symmetric_distance_matrix(const std::vector<std::str
     return filter2_batch_symmetric(precomputed_mols);
 }
 
-// Modify calculate_distance_matrix similarly: after precomputing mols1 and mols2 build a global type list across both and then call build_flat_features_for_mol on all molecules in parallel.
-std::vector<cost> calculate_distance_matrix(const std::vector<std::string>& smiles_list1, const std::vector<std::string>& smiles_list2) {
-    size_t n1 = smiles_list1.size();
-    size_t n2 = smiles_list2.size();
-    std::vector<PrecomputedMol> mols1(n1);
-    std::vector<PrecomputedMol> mols2(n2);
-
-#if FAST_MCES_PROFILE
-    auto t0 = std::chrono::steady_clock::now();
-#endif
-    #pragma omp parallel for schedule(static)
-    for (size_t i = 0; i < n1; ++i) {
-        mols1[i] = precompute_mol_data(smiles_list1[i]);
-    }
-#if FAST_MCES_PROFILE
-    auto t1 = std::chrono::steady_clock::now();
-    g_precompute_time_ns.fetch_add(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
-    g_precompute_count.fetch_add(static_cast<long long>(n1));
-#endif
-
-#if FAST_MCES_PROFILE
-    auto t2 = std::chrono::steady_clock::now();
-#endif
-    #pragma omp parallel for schedule(static)
-    for (size_t j = 0; j < n2; ++j) {
-        mols2[j] = precompute_mol_data(smiles_list2[j]);
-    }
-#if FAST_MCES_PROFILE
-    auto t3 = std::chrono::steady_clock::now();
-    g_precompute_time_ns.fetch_add(std::chrono::duration_cast<std::chrono::nanoseconds>(t3 - t2).count());
-    g_precompute_count.fetch_add(static_cast<long long>(n2));
-#endif
-
-    std::vector<cost> results(n1 * n2, 0.0);
-
-#if FAST_MCES_ERROR_COUNT
-    int error_count = 0;
-    #pragma omp parallel for schedule(dynamic) reduction(+:error_count)
-#else
-    #pragma omp parallel for schedule(dynamic)
-#endif
-    for (size_t i = 0; i < n1; ++i) {
-        for (size_t j = 0; j < n2; ++j) {
-            cost dist = calculate_pair_distance(mols1[i], mols2[j]);
-            if (std::isfinite(dist) && dist >= 0 && dist <= 10000.0) {
-                results[i * n2 + j] = dist;
-            } else {
-                results[i * n2 + j] = 0.0;
-#if FAST_MCES_ERROR_COUNT
-                error_count++;
-#endif
-            }
-        }
-    }
-#if FAST_MCES_ERROR_COUNT
-    if (error_count > 0) {
-        std::cerr << "Warning: " << error_count << " pairwise distances exceeded 10000." << std::endl;
-    }
-#endif
-
-#if FAST_MCES_PROFILE
-    long long pre_ns = g_precompute_time_ns.load();
-    long long fill_ns = g_pair_fill_time_ns.load();
-    long long solve_ns = g_pair_solve_time_ns.load();
-    long long pre_count = g_precompute_count.load();
-    long long pair_count = g_pair_count.load();
-    std::cerr << "[PROFILE] precompute total: " << (pre_ns / 1e6) << " ms"
-              << " (molecules: " << pre_count << ", avg per mol: " << (pre_count? (pre_ns / 1e6 / pre_count) : 0) << " ms)"
-              << std::endl;
-    std::cerr << "[PROFILE] pair fill total: " << (fill_ns / 1e6) << " ms"
-              << " (pairs: " << pair_count << ", avg fill per pair: " << (pair_count? (fill_ns / 1e6 / pair_count) : 0) << " ms)"
-              << std::endl;
-    std::cerr << "[PROFILE] pair solve total: " << (solve_ns / 1e6) << " ms"
-              << " (pairs: " << pair_count << ", avg solve per pair: " << (pair_count? (solve_ns / 1e6 / pair_count) : 0) << " ms)"
-              << std::endl;
-#endif
-
-    return results;
-}
-
 cost calculate_pair_distance(const PrecomputedMol& mol1, const PrecomputedMol& mol2) {
     static const std::vector<unsigned int> kEmptyNodes;
-    bool have_flat = !mol1.flat_features.empty() && !mol2.flat_features.empty();
 
-#if FAST_MCES_PROFILE
+    #if FAST_MCES_PROFILE
     g_pair_count.fetch_add(1);
 #endif
 
@@ -310,12 +229,9 @@ cost calculate_pair_distance(const PrecomputedMol& mol1, const PrecomputedMol& m
             auto fill_start = std::chrono::steady_clock::now();
 #endif
             for (size_t j = 0; j < n2; ++j) {
-                if (have_flat) {
-                    cost_matrix[i * m + j] = node_cost_flat(mol1.flat_features[nodes1[i]],
-                                                            mol2.flat_features[nodes2[j]]);
-                } else {
-                    cost_matrix[i * m + j] = node_cost(nodes1[i], mol1, nodes2[j], mol2);
-                }
+                // always use dense flat features
+                cost_matrix[i * m + j] = node_cost_flat(mol1.flat_features[nodes1[i]],
+                                                        mol2.flat_features[nodes2[j]]);
             }
 #if FAST_MCES_PROFILE
             auto fill_end = std::chrono::steady_clock::now();
@@ -372,17 +288,108 @@ std::vector<cost> filter2_batch_symmetric(const std::vector<PrecomputedMol>& mol
                 results[i * n + j] = 0.0;
                 continue;
             }
+
             cost dist = calculate_pair_distance(mols[i], mols[j]);
+
+#if FAST_MCES_ERROR_COUNT
             if (std::isfinite(dist) && dist >= 0 && dist <= 10000.0) {
                 results[i * n + j] = dist;
                 results[j * n + i] = dist;
             } else {
                 results[i * n + j] = 0.0;
                 results[j * n + i] = 0.0;
-#if FAST_MCES_ERROR_COUNT
                 error_count++;
-#endif
             }
+#else
+            results[i * n + j] = dist;
+            results[j * n + i] = dist;
+#endif
+        }
+    }
+
+#if FAST_MCES_ERROR_COUNT
+    if (error_count > 0) {
+        std::cerr << "Warning: " << error_count << " pairwise distances exceeded 10000." << std::endl;
+    }
+#endif
+
+#if FAST_MCES_PROFILE
+    long long pre_ns = g_precompute_time_ns.load();
+    long long fill_ns = g_pair_fill_time_ns.load();
+    long long solve_ns = g_pair_solve_time_ns.load();
+    long long pre_count = g_precompute_count.load();
+    long long pair_count = g_pair_count.load();
+    std::cerr << "[PROFILE] precompute total: " << (pre_ns / 1e6) << " ms"
+              << " (molecules: " << pre_count << ", avg per mol: " << (pre_count? (pre_ns / 1e6 / pre_count) : 0) << " ms)"
+              << std::endl;
+    std::cerr << "[PROFILE] pair fill total: " << (fill_ns / 1e6) << " ms"
+              << " (pairs: " << pair_count << ", avg fill per pair: " << (pair_count? (fill_ns / 1e6 / pair_count) : 0) << " ms)"
+              << std::endl;
+    std::cerr << "[PROFILE] pair solve total: " << (solve_ns / 1e6) << " ms"
+              << " (pairs: " << pair_count << ", avg solve per pair: " << (pair_count? (solve_ns / 1e6 / pair_count) : 0) << " ms)"
+              << std::endl;
+#endif
+
+    return results;
+}
+
+
+
+// Modify calculate_distance_matrix similarly: after precomputing mols1 and mols2 build a global type list across both and then call build_flat_features_for_mol on all molecules in parallel.
+std::vector<cost> calculate_distance_matrix(const std::vector<std::string>& smiles_list1, const std::vector<std::string>& smiles_list2) {
+    size_t n1 = smiles_list1.size();
+    size_t n2 = smiles_list2.size();
+    std::vector<PrecomputedMol> mols1(n1);
+    std::vector<PrecomputedMol> mols2(n2);
+
+#if FAST_MCES_PROFILE
+    auto t0 = std::chrono::steady_clock::now();
+#endif
+    #pragma omp parallel for schedule(static)
+    for (size_t i = 0; i < n1; ++i) {
+        mols1[i] = precompute_mol_data(smiles_list1[i]);
+    }
+#if FAST_MCES_PROFILE
+    auto t1 = std::chrono::steady_clock::now();
+    g_precompute_time_ns.fetch_add(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+    g_precompute_count.fetch_add(static_cast<long long>(n1));
+#endif
+
+#if FAST_MCES_PROFILE
+    auto t2 = std::chrono::steady_clock::now();
+#endif
+    #pragma omp parallel for schedule(static)
+    for (size_t j = 0; j < n2; ++j) {
+        mols2[j] = precompute_mol_data(smiles_list2[j]);
+    }
+#if FAST_MCES_PROFILE
+    auto t3 = std::chrono::steady_clock::now();
+    g_precompute_time_ns.fetch_add(std::chrono::duration_cast<std::chrono::nanoseconds>(t3 - t2).count());
+    g_precompute_count.fetch_add(static_cast<long long>(n2));
+#endif
+
+    std::vector<cost> results(n1 * n2, 0.0);
+
+#if FAST_MCES_ERROR_COUNT
+    int error_count = 0;
+    #pragma omp parallel for schedule(dynamic) reduction(+:error_count)
+#else
+    #pragma omp parallel for schedule(dynamic)
+#endif
+    for (size_t i = 0; i < n1; ++i) {
+        for (size_t j = 0; j < n2; ++j) {
+#if FAST_MCES_ERROR_COUNT
+            cost dist = calculate_pair_distance(mols1[i], mols2[j]);
+            if (std::isfinite(dist) && dist >= 0 && dist <= 10000.0) {
+                results[i * n2 + j] = dist;
+            } else {
+                results[i * n2 + j] = 0.0;
+                error_count++;
+            }
+#else
+            // When error counting is disabled, avoid the extra checks and assign directly.
+            results[i * n2 + j] = calculate_pair_distance(mols1[i], mols2[j]);
+#endif
         }
     }
 #if FAST_MCES_ERROR_COUNT
@@ -410,3 +417,5 @@ std::vector<cost> filter2_batch_symmetric(const std::vector<PrecomputedMol>& mol
 
     return results;
 }
+
+
