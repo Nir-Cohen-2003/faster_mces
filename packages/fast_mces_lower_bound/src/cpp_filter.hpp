@@ -29,12 +29,12 @@ struct PrecomputedMol {
 cost solve_lap(const std::vector<cost>& cost_matrix_flat, size_t n);
 
 // This will be the single entry point from Cython.
-std::vector<cost> calculate_symmetric_distance_matrix(const std::vector<std::string>& smiles_list);
+std::vector<float> calculate_symmetric_distance_matrix(const std::vector<std::string>& smiles_list);
 
 // New function: computes lower bound MCES matrix between two lists (not symmetric)
-std::vector<cost> calculate_distance_matrix(const std::vector<std::string>& smiles_list1, const std::vector<std::string>& smiles_list2);
+std::vector<float> calculate_distance_matrix(const std::vector<std::string>& smiles_list1, const std::vector<std::string>& smiles_list2);
 
-std::vector<cost> filter2_batch_symmetric(const std::vector<PrecomputedMol>& mols);
+std::vector<float> filter2_batch_symmetric(const std::vector<PrecomputedMol>& mols);
 
 // Helper function to create a PrecomputedMol from a SMILES string.
 // This will be called from Cython.

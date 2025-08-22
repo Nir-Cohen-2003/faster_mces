@@ -11,6 +11,8 @@
 #include "lap.h"
 #include <chrono>
 #include <atomic>
+#include <cmath>      // for std::lround
+#include <cstdint>
 
 #ifndef FAST_MCES_PROFILE
 #define FAST_MCES_PROFILE 0
@@ -19,6 +21,9 @@
 #ifndef FAST_MCES_ERROR_COUNT
 #define FAST_MCES_ERROR_COUNT 0
 #endif
+
+// Quantization: quarter-integers -> scale by 4 so costs become integers
+static const int32_t FEATURE_SCALE = 4;
 
 #if FAST_MCES_PROFILE
 static std::atomic<long long> g_precompute_time_ns{0};
@@ -36,7 +41,7 @@ cost solve_lap(const std::vector<cost>& cost_matrix_flat, size_t n) {
     }
     std::vector<int> rowsol(n), colsol(n);
     std::vector<cost> u(n), v(n);
-    cost lap_cost = lap(n, cost_ptrs.data(), rowsol.data(), colsol.data(), u.data(), v.data());
+    cost lap_cost = lap(static_cast<int>(n), cost_ptrs.data(), rowsol.data(), colsol.data(), u.data(), v.data());
     return lap_cost;
 }
 
@@ -56,19 +61,22 @@ PrecomputedMol precompute_mol_data(const std::string& smiles) {
         p_mol.atom_types_to_indices[atom_type].push_back(atom_idx);
 
         AtomData& atom_data = p_mol.atom_data_vec[atom_idx];
-        atom_data.total_weight = 0.0;
+        atom_data.total_weight = 0;
 
         for (const auto& neighbor : mol->atomNeighbors(atom)) {
             const RDKit::Bond* bond = mol->getBondBetweenAtoms(atom_idx, neighbor->getIdx());
-            cost weight = static_cast<cost>(bond->getBondTypeAsDouble());
+            double raw_w = bond->getBondTypeAsDouble(); // e.g. 1.0, 1.5, 2.0
+            cost weight = static_cast<cost>(std::lround(raw_w * FEATURE_SCALE));
             int neighbor_type = neighbor->getAtomicNum();
             atom_data.atom_weights[neighbor_type].push_back(weight);
             atom_data.total_weight += weight;
         }
         
-        atom_data.total_weight /= 2.0;
+        // keep same semantics: total_weight was half the sum of incident weights
+        atom_data.total_weight = static_cast<cost>(atom_data.total_weight / 2);
 
         for (auto& pair : atom_data.atom_weights) {
+            // sort descending - integers still sort fine; use std::sort+reverse iterator
             std::sort(pair.second.rbegin(), pair.second.rend());
         }
     }
@@ -76,34 +84,6 @@ PrecomputedMol precompute_mol_data(const std::string& smiles) {
 }
 
 static const std::vector<cost> kEmptyCostVec;
-
-// Replace node_cost internals to avoid temporaries
-// cost node_cost(unsigned int node1_idx, const PrecomputedMol& mol1, unsigned int node2_idx, const PrecomputedMol& mol2) {
-//     const auto& weights1_map = mol1.atom_data_vec[node1_idx].atom_weights;
-//     const auto& weights2_map = mol2.atom_data_vec[node2_idx].atom_weights;
-//
-//     std::set<int> all_atom_types;
-//     for (const auto& pair : weights1_map) all_atom_types.insert(pair.first);
-//     for (const auto& pair : weights2_map) all_atom_types.insert(pair.first);
-//
-//     cost cost_val = 0.0;
-//     for (int atom_type : all_atom_types) {
-//         auto it1 = weights1_map.find(atom_type);
-//         auto it2 = weights2_map.find(atom_type);
-//
-//         const std::vector<cost>* w1 = (it1 != weights1_map.end()) ? &it1->second : &kEmptyCostVec;
-//         const std::vector<cost>* w2 = (it2 != weights2_map.end()) ? &it2->second : &kEmptyCostVec;
-//
-//         size_t min_len = std::min(w1->size(), w2->size());
-//         for (size_t i = 0; i < min_len; ++i) {
-//             cost_val += std::abs((*w1)[i] - (*w2)[i]);
-//         }
-//
-//         for (size_t i = min_len; i < w1->size(); ++i) cost_val += (*w1)[i];
-//         for (size_t i = min_len; i < w2->size(); ++i) cost_val += (*w2)[i];
-//     }
-//     return cost_val / 2.0;
-// }
 
 // New helper: build dense flat features for one molecule given global ordering and per-type maxima
 static void build_flat_features_for_mol(PrecomputedMol& pmol,
@@ -114,7 +94,7 @@ static void build_flat_features_for_mol(PrecomputedMol& pmol,
     for (size_t c : max_counts_per_type) per_type_total += c;
     // optional: append one extra element for total_weight at the end
     size_t vec_len = per_type_total;
-    pmol.flat_features.assign(n_atoms, std::vector<cost>(vec_len, 0.0));
+    pmol.flat_features.assign(n_atoms, std::vector<cost>(vec_len, 0));
 
     for (size_t a = 0; a < n_atoms; ++a) {
         std::vector<cost>& feat = pmol.flat_features[a];
@@ -125,26 +105,27 @@ static void build_flat_features_for_mol(PrecomputedMol& pmol,
             const std::vector<cost>* w = (it != pmol.atom_data_vec[a].atom_weights.end()) ? &it->second : &kEmptyCostVec;
             size_t maxc = max_counts_per_type[t_i];
             for (size_t k = 0; k < maxc; ++k) {
-                feat[offset + k] = (k < w->size()) ? (*w)[k] : 0.0;
+                feat[offset + k] = (k < w->size()) ? (*w)[k] : 0;
             }
             offset += maxc;
         }
     }
 }
 
-// New fast node cost using dense vectors (L1) - equivalent to old logic
+// New fast node cost using dense vectors (L1) - equivalent to old logic, integer domain
 static inline cost node_cost_flat(const std::vector<cost>& f1, const std::vector<cost>& f2) {
     // assume same length
     size_t L = f1.size();
-    cost s = 0.0;
-    for (size_t i = 0; i < L; ++i) s += std::abs(f1[i] - f2[i]);
-    return s / 2.0;
+    int64_t s = 0; // accumulate in 64-bit to be safe
+    for (size_t i = 0; i < L; ++i) s += std::llabs(static_cast<long long>(f1[i]) - static_cast<long long>(f2[i]));
+    // integer_cost = (sum_abs) / 2
+    return static_cast<cost>(s / 2);
 }
 
 // Modify calculate_symmetric_distance_matrix to build global types and flat features once per batch
-std::vector<cost> calculate_symmetric_distance_matrix(const std::vector<std::string>& smiles_list) {
-    size_t n = smiles_list.size();
-    std::vector<PrecomputedMol> precomputed_mols(n);
+std::vector<float> calculate_symmetric_distance_matrix(const std::vector<std::string>& smiles_list) {
+     size_t n = smiles_list.size();
+     std::vector<PrecomputedMol> precomputed_mols(n);
 
 #if FAST_MCES_PROFILE
     auto t0_all = std::chrono::steady_clock::now();
@@ -197,7 +178,7 @@ cost calculate_pair_distance(const PrecomputedMol& mol1, const PrecomputedMol& m
     g_pair_count.fetch_add(1);
 #endif
 
-    cost total_cost = 0.0;
+    cost total_cost = 0;
     std::set<int> all_types;
     for (const auto& p : mol1.atom_types_to_indices) all_types.insert(p.first);
     for (const auto& p : mol2.atom_types_to_indices) all_types.insert(p.first);
@@ -221,7 +202,7 @@ cost calculate_pair_distance(const PrecomputedMol& mol1, const PrecomputedMol& m
         size_t n1 = nodes1.size();
         size_t n2 = nodes2.size();
         size_t m = std::max(n1, n2);
-        std::vector<cost> cost_matrix(m * m, 0.0);
+        std::vector<cost> cost_matrix(m * m, 0);
 
         // fill cost_matrix and time the fill if profiling enabled
         for (size_t i = 0; i < n1; ++i) {
@@ -272,9 +253,9 @@ cost calculate_pair_distance(const PrecomputedMol& mol1, const PrecomputedMol& m
     return total_cost;
 }
 
-std::vector<cost> filter2_batch_symmetric(const std::vector<PrecomputedMol>& mols) {
+std::vector<float> filter2_batch_symmetric(const std::vector<PrecomputedMol>& mols) {
     size_t n = mols.size();
-    std::vector<cost> results(n * n, 0.0);
+    std::vector<float> results(n * n, 0.0f);
 
 #if FAST_MCES_ERROR_COUNT
     int error_count = 0;
@@ -285,24 +266,29 @@ std::vector<cost> filter2_batch_symmetric(const std::vector<PrecomputedMol>& mol
     for (size_t i = 0; i < n; ++i) {
         for (size_t j = i; j < n; ++j) {
             if (i == j) {
-                results[i * n + j] = 0.0;
+                results[i * n + j] = 0.0f;
                 continue;
             }
 
             cost dist = calculate_pair_distance(mols[i], mols[j]);
 
 #if FAST_MCES_ERROR_COUNT
-            if (std::isfinite(dist) && dist >= 0 && dist <= 10000.0) {
-                results[i * n + j] = dist;
-                results[j * n + i] = dist;
+            // integer-safe range check (scale threshold to integer units)
+            if (dist >= 0 && dist <= static_cast<cost>(10000 * FEATURE_SCALE)) {
+                // divide by FEATURE_SCALE using float division (float preserves quarter-integer values)
+                float outv = static_cast<float>(dist) / 4.0f;
+                results[i * n + j] = outv;
+                results[j * n + i] = outv;
             } else {
-                results[i * n + j] = 0.0;
-                results[j * n + i] = 0.0;
+                results[i * n + j] = 0.0f;
+                results[j * n + i] = 0.0f;
                 error_count++;
             }
 #else
-            results[i * n + j] = dist;
-            results[j * n + i] = dist;
+            // divide by FEATURE_SCALE using float division (float preserves quarter-integer values)
+            float outv = static_cast<float>(dist) / 4.0f;
+            results[i * n + j] = outv;
+            results[j * n + i] = outv;
 #endif
         }
     }
@@ -336,7 +322,7 @@ std::vector<cost> filter2_batch_symmetric(const std::vector<PrecomputedMol>& mol
 
 
 // Modify calculate_distance_matrix similarly: after precomputing mols1 and mols2 build a global type list across both and then call build_flat_features_for_mol on all molecules in parallel.
-std::vector<cost> calculate_distance_matrix(const std::vector<std::string>& smiles_list1, const std::vector<std::string>& smiles_list2) {
+std::vector<float> calculate_distance_matrix(const std::vector<std::string>& smiles_list1, const std::vector<std::string>& smiles_list2) {
     size_t n1 = smiles_list1.size();
     size_t n2 = smiles_list2.size();
     std::vector<PrecomputedMol> mols1(n1);
@@ -403,7 +389,7 @@ std::vector<cost> calculate_distance_matrix(const std::vector<std::string>& smil
     }
     // --- End build flat features ---
 
-    std::vector<cost> results(n1 * n2, 0.0);
+    std::vector<float> results(n1 * n2, 0.0f);
 
 #if FAST_MCES_ERROR_COUNT
     int error_count = 0;
@@ -415,15 +401,15 @@ std::vector<cost> calculate_distance_matrix(const std::vector<std::string>& smil
         for (size_t j = 0; j < n2; ++j) {
 #if FAST_MCES_ERROR_COUNT
             cost dist = calculate_pair_distance(mols1[i], mols2[j]);
-            if (std::isfinite(dist) && dist >= 0 && dist <= 10000.0) {
-                results[i * n2 + j] = dist;
+            if (dist >= 0 && dist <= static_cast<cost>(10000 * FEATURE_SCALE)) {
+                results[i * n2 + j] = static_cast<float>(dist) / 4.0f;
             } else {
-                results[i * n2 + j] = 0.0;
+                results[i * n2 + j] = 0.0f;
                 error_count++;
             }
 #else
             // When error counting is disabled, avoid the extra checks and assign directly.
-            results[i * n2 + j] = calculate_pair_distance(mols1[i], mols2[j]);
+            results[i * n2 + j] = static_cast<float>(calculate_pair_distance(mols1[i], mols2[j])) / 4.0f;
 #endif
         }
     }

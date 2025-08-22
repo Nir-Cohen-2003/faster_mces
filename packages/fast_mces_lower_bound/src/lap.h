@@ -1,12 +1,14 @@
-/*************** CONSTANTS  *******************/
+#include <cstdint>
+#include <climits>
 
-#define BIG 3.402823e+38 // max value for float
+// *************** CONSTANTS  *******************
+#define BIG (65536 / 4) // large sentinel for integer costs
 
 /*************** TYPES      *******************/
 
 typedef int row;
 typedef int col;
-typedef float cost;
+typedef uint16_t cost;
 
 /*************** FUNCTIONS  *******************/
 
