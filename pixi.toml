@@ -8,11 +8,7 @@ preview = ["pixi-build"]
 
 [tasks]
 test = "python src/mces/test.py"
-build-wheel = "python -m build"
-build-all = "python -m build --wheel --sdist"
-publish-test = {cmd="twine upload --repository testpypi --skip-existing dist/*"}
-cibw-wheels = { cmd = "python -m cibuildwheel --output-dir dist", env = {CIBW_BUILD = "cp312-* cp313-*", CIBW_SKIP = "*musllinux* *-win32"}, depends-on=["clean_dist"]}
-clean_dist = "rm -rf dist || true"
+
 
 [dependencies]
 rdkit = ">=2024.0.0"
@@ -23,12 +19,10 @@ networkx = ">=3.5,<4"
 fast_mces_lower_bound = { path = "packages/fast_mces_lower_bound" }
 mces_splitting = { path = "." }
 python = ">=3.12.0"
-pip = "*"
-twine = "*"
-cibuildwheel = "*"
 
-[pypi-dependencies]
-build = "*"
+
+
+# [pypi-dependencies]
 
 [package]
 name = "mces_splitting"
@@ -38,7 +32,6 @@ version = "0.1.0"
 backend = { name = "pixi-build-python", version = "==0.3.2" }
 
 [package.host-dependencies] 
-hatchling = "*"
 python = ">=3.12.0"
 pip = "*"
 numpy = "*"
