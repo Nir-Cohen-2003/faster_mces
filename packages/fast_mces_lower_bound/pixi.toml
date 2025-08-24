@@ -31,25 +31,24 @@ extra-args = [
   "-DCMAKE_BUILD_TYPE=Release",
   "-DRDKIT_INCLUDE_DIR=${PREFIX}/include/rdkit",
   "-DRDKIT_LIB_DIR=${PREFIX}/lib",
-  # "-DFAST_MCES_PROFILE=0"
+  # "-DFAST_MCES_PROFILE=1"
 ]
 
 
 [package.host-dependencies]
-cmake = "*"
 nanobind = ">=2.4.0"
-python = "*"
 librdkit-dev = ">=2024.0.0"
 boost-cpp = "*"
-
+python = ">=3.8"
 [package.build-dependencies]#these are necessery for the nanobind stuff to work
-cmake = "*"
 nanobind = ">=2.4.0"
-python = "*"
 librdkit-dev = ">=2024.0.0"
 boost-cpp = "*"
+python = ">=3.8"
+
 [package.run-dependencies]
 # The runtime dependencies of the package
-librdkit-dev = ">=2024.0.0"
-numpy = "*"
-# polars = "*"
+# we can use any one of the 3, just need the .so files
+librdkit-dev = ">=2024.0.0" 
+# rdkit = ">=2024.0.0"
+# librdkit = ">=2024.0.0"
