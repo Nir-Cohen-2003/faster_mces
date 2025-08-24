@@ -7,7 +7,7 @@ version = "0.1.0"
 preview = ["pixi-build"]
 
 [tasks]
-test = "python src/mces/test.py"
+test = "python src/mces_splitting/test.py"
 
 
 [dependencies]
@@ -19,10 +19,8 @@ networkx = ">=3.5,<4"
 fast_mces_lower_bound = { path = "packages/fast_mces_lower_bound" }
 mces_splitting = { path = "." }
 python = ">=3.12.0"
+ipykernel = "*"
 
-
-
-# [pypi-dependencies]
 
 [package]
 name = "mces_splitting"
@@ -34,8 +32,8 @@ backend = { name = "pixi-build-python", version = "==0.3.2" }
 [package.host-dependencies] 
 python = ">=3.12.0"
 pip = "*"
+hatchling = "*"
 numpy = "*"
-
 [package.run-dependencies] 
 fast_mces_lower_bound = { path = "packages/fast_mces_lower_bound" }
 rdkit = ">=2024.0.0"
