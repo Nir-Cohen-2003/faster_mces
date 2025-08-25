@@ -8,7 +8,7 @@ import scipy.sparse as sp
 import random
 # from pickle import dump, load
 # from .par import _calculate_bounds_batch
-from .bounds import filter2_cpp
+from .bounds import mces_lower_bound_symmetric
 from .mces import calculate_mces_distances, exact_mces_for_list_of_pairs  # Assuming this function exists
 from multiprocessing import cpu_count
 
@@ -43,7 +43,7 @@ def split_dataset_adaptive_threshold(
     print(f"Calculating lower bounds matrix for {n} molecules using C++ implementation...")
 
     # Use C++ implementation for batch processing - much faster
-    bounds_matrix = filter2_cpp(dataset.copy())
+    bounds_matrix = mces_lower_bound_symmetric(dataset.copy())
     if mces_matrix_save_path is not None:
         np.save(mces_matrix_save_path, bounds_matrix)
     if n < 20:
@@ -196,7 +196,7 @@ def split_dataset_with_selective_exact_calculation(
     
     n = len(dataset)
     print(f"Calculating lower bounds matrix for {n} molecules...")
-    bounds_matrix = filter2_cpp(dataset)
+    bounds_matrix = mces_lower_bound_symmetric(dataset)
     if mces_matrix_save_path is not None:
         np.save(mces_matrix_save_path, bounds_matrix)
     thresholds = list(range(initial_distinction_threshold, min_distinction_threshold - 1, threshold_step))
@@ -362,7 +362,7 @@ def split_dataset_brute_force_exact(
     print(f"Calculating lower bounds matrix for {n} molecules using C++ implementation...")
 
     # Use C++ implementation for batch processing
-    bounds_matrix = filter2_cpp(dataset.copy())
+    bounds_matrix = mces_lower_bound_symmetric(dataset.copy())
     if mces_matrix_save_path is not None:
         np.save(mces_matrix_save_path, bounds_matrix)
     
@@ -481,7 +481,7 @@ def split_dataset_brute_force_exact(
 
 if __name__ == "__main__":
     from time import perf_counter
-    from ..rdkit.mol import sanitize_smiles_polars
+    from hrms_utils.rdkit.mol import inchi_to_smiles
 
     nist_smiles: List[str] = pl.scan_parquet('/home/analytit_admin/dev/MS_encoder/data/NIST_prepared_labeled.parquet').select('CanonicalSMILES').unique(maintain_order=True).with_columns(
             pl.col("CanonicalSMILES").map_batches(

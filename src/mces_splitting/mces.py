@@ -1,5 +1,5 @@
 import numpy as np
-from np.typing import NDArray
+from numpy.typing import NDArray
 import polars as pl
 import os
 from multiprocessing import cpu_count

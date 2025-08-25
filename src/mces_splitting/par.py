@@ -2,7 +2,7 @@ import os
 from joblib import Memory
 from .lib import MCES_ILP
 from .graph_construction import construct_graph
-from .bounds import filter2_batch, filter2
+from .bounds import filter2_batch
 from typing import List, Tuple, Any, Generator
 import networkx as nx
 from contextlib import contextmanager
@@ -119,34 +119,34 @@ def _calculate_distinct_batch(
         return results
 
 
-def calculate_mces_distance_pair(smiles1: str, smiles2: str, threshold:int=10) -> float:
-    """
-    Calculate the exact MCES distance between two molecules.
+# def calculate_mces_distance_pair(smiles1: str, smiles2: str, threshold:int=10) -> float:
+#     """
+#     Calculate the exact MCES distance between two molecules.
     
-    Parameters
-    ----------
-    smiles1 : str
-        SMILES string of first molecule
-    smiles2 : str
-        SMILES string of second molecule
+#     Parameters
+#     ----------
+#     smiles1 : str
+#         SMILES string of first molecule
+#     smiles2 : str
+#         SMILES string of second molecule
         
-    Returns
-    -------
-    float
-        The MCES distance between the two molecules
-    """
-    g1 = _cached_construct_graph(smiles1)
-    g2 = _cached_construct_graph(smiles2)
+#     Returns
+#     -------
+#     float
+#         The MCES distance between the two molecules
+#     """
+#     g1 = _cached_construct_graph(smiles1)
+#     g2 = _cached_construct_graph(smiles2)
     
-    # Calculate the lower bound first
-    bound = filter2(g1, g2)
-    if bound > threshold:
-        return bound
+#     # Calculate the lower bound first
+#     bound = filter2(g1, g2)
+#     if bound > threshold:
+#         return bound
     
-    # If we need exact distance, run the ILP
-    distance, _ = MCES_ILP(g1, g2,threshold=threshold)
+#     # If we need exact distance, run the ILP
+#     distance, _ = MCES_ILP(g1, g2,threshold=threshold)
     
-    return distance
+#     return distance
 
 
 def are_close_mol_pair(smiles1: str, smiles2: str) -> bool:

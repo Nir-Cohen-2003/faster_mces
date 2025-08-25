@@ -367,7 +367,7 @@ def filter2_batch(graphs_list1, graphs_list2=None):
     
     return results
 
-def filter2_cpp(smiles_list:Sequence[str]) -> NDArray:
+def mces_lower_bound_symmetric(smiles_list:Sequence[str]) -> NDArray:
     """
     Wrapper for the fast C++ MCES bounds calculation using SMILES strings directly.
     This uses the optimized C++ implementation with parallel processing.
@@ -418,7 +418,7 @@ if __name__ == "__main__":
         # Test C++ implementation if available
         try:
             start_time = perf_counter()
-            cpp_matrix = filter2_cpp(smiles_examples)
+            cpp_matrix = mces_lower_bound_symmetric(smiles_examples)
             filter2_cpp_results = cpp_matrix.flatten()
             time2_cpp = perf_counter() - start_time
             cpp_available = True
@@ -576,7 +576,7 @@ if __name__ == "__main__":
         print(f"Time for filter2_batch on DSSTox dataset: {time2_batch:.2f} seconds")
         start_time = perf_counter()
         print("Running C++ implementation on SMILES data...")
-        cpp_results = filter2_cpp(smiles)
+        cpp_results = mces_lower_bound_symmetric(smiles)
         if cpp_results.shape[0] != cpp_results.shape[1]:
             raise ValueError("The input graphs must be a square matrix (same number of graphs in both lists).")
         upper_triangle_indices = np.triu_indices(cpp_results.shape[0], k=1)
@@ -604,7 +604,7 @@ if __name__ == "__main__":
         ).filter(pl.col("MS_READY_SMILES").is_not_null()).head(number_of_mol).collect().to_series().to_list()
         start_time = perf_counter()
         print("Running C++ implementation on SMILES data...")
-        cpp_results = filter2_cpp(smiles)
+        cpp_results = mces_lower_bound_symmetric(smiles)
         if cpp_results.shape[0] != cpp_results.shape[1]:
             raise ValueError("The input graphs must be a square matrix (same number of graphs in both lists).")
         upper_triangle_indices = np.triu_indices(cpp_results.shape[0], k=1)

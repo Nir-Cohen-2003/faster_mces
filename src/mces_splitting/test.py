@@ -16,6 +16,8 @@ smiles_list = [
 
 ]
 
+print(np.array([1]))
+
 # Run symmetric distance matrix
 sym_matrix = fast_mces_lower_bound.calculate_symmetric_distance_matrix(smiles_list)
 print("Symmetric distance matrix:", sym_matrix)
@@ -24,7 +26,7 @@ print("Type of sym_matrix:", type(sym_matrix))
 if len(sym_matrix) > 0:
     print("Type of elements in sym_matrix:", type(sym_matrix[0]))
 assert isinstance(sym_matrix, list), "sym_matrix is not a list"
-assert all(isinstance(x, (int, float, np.integer, np.floating)) for x in sym_matrix), "sym_matrix contains non-numeric elements"
+assert all(isinstance(x, (float)) for x in sym_matrix), "sym_matrix contains non-numeric elements"
 # make sure all the values
 
 
