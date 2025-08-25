@@ -43,7 +43,6 @@ environments:
       - conda: https://prefix.dev/conda-forge/linux-64/libopenblas-0.3.30-pthreads_h94d23a6_1.conda
       - conda: https://prefix.dev/conda-forge/linux-64/libpng-1.6.50-h421ea60_1.conda
       - conda: https://prefix.dev/conda-forge/linux-64/librdkit-2025.03.5-h3c5c181_0.conda
-      - conda: https://prefix.dev/conda-forge/linux-64/librdkit-dev-2025.03.5-ha4b6fd6_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/libsqlite-3.50.4-h0c1763c_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/libstdcxx-15.1.0-h8f9b012_4.conda
       - conda: https://prefix.dev/conda-forge/linux-64/libstdcxx-ng-15.1.0-h4852527_4.conda
@@ -105,7 +104,6 @@ environments:
       - conda: https://prefix.dev/conda-forge/win-64/libmpdec-4.0.0-h2466b09_0.conda
       - conda: https://prefix.dev/conda-forge/win-64/libpng-1.6.50-h7351971_1.conda
       - conda: https://prefix.dev/conda-forge/win-64/librdkit-2025.03.5-h0cb3073_0.conda
-      - conda: https://prefix.dev/conda-forge/win-64/librdkit-dev-2025.03.5-h36c15f3_0.conda
       - conda: https://prefix.dev/conda-forge/win-64/libsqlite-3.50.4-hf5d6505_0.conda
       - conda: https://prefix.dev/conda-forge/win-64/libwinpthread-12.0.0.r4.gg4f2fc60ca-h57928b3_9.conda
       - conda: https://prefix.dev/conda-forge/win-64/libxml2-2.13.8-h741aa76_1.conda
@@ -258,13 +256,13 @@ packages:
   build: h9352c13_0
   subdir: win-64
   depends:
-  - librdkit-dev >=2024.0.0
+  - librdkit >=2024.0.0
   - python_abi 3.13.* *_cp313
   - ucrt >=10.0.20348.0
   - vc >=14.2,<15
   - vc14_runtime >=14.29.30139
   input:
-    hash: 5f5f38316236c2e2fc2e4e2e141846d66ea56276600ef6f1866767cf2a9c6eb5
+    hash: 3f31ea2415044891968b27efd8ab9398df0baa8fffc94e2948e8886a0d296c0f
     globs: []
 - conda: .
   name: fast_mces_lower_bound
@@ -273,11 +271,11 @@ packages:
   subdir: linux-64
   depends:
   - libgcc >=15
-  - librdkit-dev >=2024.0.0
+  - librdkit >=2024.0.0
   - libstdcxx >=15
   - python_abi 3.13.* *_cp313
   input:
-    hash: 5f5f38316236c2e2fc2e4e2e141846d66ea56276600ef6f1866767cf2a9c6eb5
+    hash: 3f31ea2415044891968b27efd8ab9398df0baa8fffc94e2948e8886a0d296c0f
     globs: []
 - conda: https://prefix.dev/conda-forge/noarch/font-ttf-dejavu-sans-mono-2.37-hab24e00_0.tar.bz2
   sha256: 58d7f40d2940dd0a8aa28651239adbf5613254df0f75789919c4e6762054403b
@@ -857,28 +855,6 @@ packages:
   license_family: BSD
   size: 11402228
   timestamp: 1753550334627
-- conda: https://prefix.dev/conda-forge/linux-64/librdkit-dev-2025.03.5-ha4b6fd6_0.conda
-  sha256: 223ec1d15ad5a0b28205453519627d86e182ba690fe0a7c2127619e8f623dd0e
-  md5: 10870f585f5f43a658e8078eb065a6f3
-  depends:
-  - __glibc >=2.17,<3.0.a0
-  - librdkit 2025.03.5 h3c5c181_0
-  license: BSD-3-Clause
-  license_family: BSD
-  size: 367890
-  timestamp: 1753548721684
-- conda: https://prefix.dev/conda-forge/win-64/librdkit-dev-2025.03.5-h36c15f3_0.conda
-  sha256: ce08aad9b0878972aec344abe1f4cc314155c905e4c47f6438f7f6c172b2d613
-  md5: ff7379072541e983c3af37f50988b750
-  depends:
-  - librdkit 2025.03.5 h0cb3073_0
-  - ucrt >=10.0.20348.0
-  - vc >=14.3,<15
-  - vc14_runtime >=14.44.35208
-  license: BSD-3-Clause
-  license_family: BSD
-  size: 615807
-  timestamp: 1753550396678
 - conda: https://prefix.dev/conda-forge/linux-64/libsqlite-3.50.4-h0c1763c_0.conda
   sha256: 6d9c32fc369af5a84875725f7ddfbfc2ace795c28f246dc70055a79f9b2003da
   md5: 0b367fad34931cb79e0d6b7e5c06bb1c

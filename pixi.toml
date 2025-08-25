@@ -9,21 +9,15 @@ preview = ["pixi-build"]
 [tasks]
 test = "python src/mces_splitting/test.py"
 splitting_test = "python -m src.mces_splitting.dataset_splitting"
+bounds_validity_test = "python -m src.mces_splitting.bounds_test"
 
 [dependencies]
-fast_mces_lower_bound = { path = "packages/fast_mces_lower_bound" }
-# mces_splitting = { path = "." }
+mces_splitting = { path = "." }
 python = ">=3.12.0"
-pulp = ">=2.8.0,<3"
-# rdkit = ">=2024.0.0"
+
 [pypi-dependencies]
-hrms_utils = {version = "==0.2.1.post1" ,index = "https://test.pypi.org/simple"}
+hrms_utils = {version = "==0.2.1.post2" ,index = "https://test.pypi.org/simple"}
 ipykernel = "*"
-polars = ">=1.32.0,<2"
-# numpy = "*"
-# scipy = "*"
-networkx = ">=3.5,<4"
-rustworkx = ">=0.17.1, <0.18"
 
 [package]
 name = "mces_splitting"
@@ -36,11 +30,12 @@ backend = { name = "pixi-build-python", version = "==0.3.2" }
 python = ">=3.12.0"
 pip = "*"
 hatchling = "*"
-numpy = "*"
+# numpy = "*"
 [package.run-dependencies] 
 fast_mces_lower_bound = { path = "packages/fast_mces_lower_bound" }
-# rdkit = ">=2024.0.0"
+rdkit = ">=2024.0.0"
 polars = ">=1.32.0,<2"
-# numpy = "*"
+numpy = ">=2.0.0,<2.3.0"
 scipy = "*"
-networkx = ">=3.5,<4"
+networkx = "*"
+pulp = "*"

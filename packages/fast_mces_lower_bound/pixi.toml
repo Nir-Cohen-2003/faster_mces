@@ -4,15 +4,15 @@ platforms = ["linux-64",'win-64']
 preview = ["pixi-build"]                                  
 
 
-# [dependencies]
-# fast_mces_lower_bound = { path = "."}
-# python = "*"
-# numpy = "*"
-# polars = "*"
-# [tasks]
-# start = { cmd = "python -c 'import fast_mces_lower_bound'"}
-# test = "python tests/test.py"
-# benchmark = "python tests/benchmark.py"
+[dependencies]
+fast_mces_lower_bound = { path = "."}
+python = "*"
+numpy = "*"
+polars = "*"
+[tasks]
+start = { cmd = "python -c 'import fast_mces_lower_bound'"}
+test = "python tests/test.py"
+benchmark = "python tests/benchmark.py"
 
 [package]
 name = "fast_mces_lower_bound"

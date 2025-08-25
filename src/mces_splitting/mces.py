@@ -492,7 +492,7 @@ def MCES_ILP(G1, G2, threshold, solver='default', solver_options={}, no_ilp_thre
 
     #solve the ILP
     if solver.lower()=="default":
-        sol= pulp.getSolver("PULP_CBC_CMD", msg=0,**solver_options)
+        sol= pulp.apis.PULP_CBC_CMD(msg=False)
         ILP.solve()
     elif solver.upper()=="GUROBI":
         # ILP.solve(pulp.GUROBI(**solver_options))
@@ -503,7 +503,7 @@ def MCES_ILP(G1, G2, threshold, solver='default', solver_options={}, no_ilp_thre
         print("CUOPT WAS USED")
 
     else:
-        ILP.solve(pulp.PULP_CBC_CMD(msg=0,**solver_options))
+        ILP.solve(pulp.PULP_CBC_CMD(msg=False,**solver_options))
     if ILP.status==1:
         val = ILP.objective.value()
         if val is None:

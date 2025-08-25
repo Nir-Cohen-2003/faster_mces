@@ -18,5 +18,7 @@
         "unordered_map": "cpp",
         "unordered_set": "cpp",
         "atomic": "cpp"
-    }
+    },
+    "python-envs.defaultEnvManager": "ms-python.python:system",
+    "python-envs.pythonProjects": []
 }
