@@ -9,9 +9,13 @@ from contextlib import contextmanager
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from .graph_construction import construct_graph
 from .bounds import mces_lower_bound, mces_lower_bound_symmetric
 from functools import lru_cache
+import pulp
+import networkx as nx
+from rdkit import Chem
+
+
 
 if __name__ == "__main__":
     PROFILE = True
@@ -96,22 +100,11 @@ def calculate_mces_distances(
 
     exact_results: List[Tuple[int, int, int]] = []
     if len(pairs_needing_exact) > 0:
-        # create batches and run exact computation in parallel
-        exact_batches = list(batched(pairs_needing_exact, batch_size))
-        with ProcessPoolExecutor(max_workers=n_jobs) as executor:
-            future_to_batch = {
-                executor.submit(_calculate_exact_batch, smiles_list1, smiles_list2, batch, threshold, solver): batch for batch in exact_batches
-            }
-            exact_batch_results = []
-            for future in as_completed(future_to_batch):
-                batch = future_to_batch[future]
-                try:
-                    exact_batch_results.append(future.result())
-                except Exception as e:
-                    print(f"Error processing exact batch {batch}: {e}")
-                    fallback = [(i, j, None) for i, j in batch]
-                    exact_batch_results.append(fallback)
-            exact_results = [item for sublist in exact_batch_results for item in sublist]
+        # delegate batching & parallelization to exact_mces_for_list_of_pairs
+        exact_results = exact_mces_for_list_of_pairs(
+            smiles_list1, smiles_list2, pairs_needing_exact,
+            n_jobs=n_jobs, batch_size=batch_size, threshold=threshold, solver=solver
+        )
 
     if PROFILE:
         print(f"Exact calculation completed, updating matrix")
@@ -206,48 +199,32 @@ def are_close_mols(
         if PROFILE:
             print(f"Pairs needing ILP: {len(pairs_needing_ilp)} out of {len(bounds_results)}")
     
-        with ProcessPoolExecutor(max_workers=n_jobs) as executor:
+        # reuse exact_mces_for_list_of_pairs (performs batching + parallelism)
+        if PROFILE:
+            exact_start = time.perf_counter()
+        
+        exact_results = exact_mces_for_list_of_pairs(
+            smiles_list1, smiles_list2, pairs_needing_ilp,
+            n_jobs=n_jobs, batch_size=batch_size, threshold=2, solver=solver
+        )
 
-            if PROFILE:
-                exact_start = time.perf_counter()
-            
-            # Create batches for ILP computation
-            ilp_batches = batched(pairs_needing_ilp, batch_size)
-            
-            # Calculate exact results in batches - pass SMILES lists instead of precomputed graphs
-            future_to_batch = {
-            executor.submit(_calculate_exact_batch, smiles_list1, smiles_list2, batch, 2, solver): batch for batch in ilp_batches
-            }
-            exact_batch_results = []
-            for future in as_completed(future_to_batch):
-                batch = future_to_batch[future]
-            try:
-                exact_batch_results.append(future.result())
-            except Exception as e:
-                print(f"Error processing exact batch {batch}: {e}")
-                fallback = [(i, j, None) for i, j in batch]
-                exact_batch_results.append(fallback)
-            
-            # Flatten batch results
-            exact_results = list(chain(*exact_batch_results))
-            
-            if PROFILE:
-                exact_time = time.perf_counter() - exact_start
-                print(f"Exact calculation time: {exact_time:.3f}s")
-                update_start = time.perf_counter()
-            
-            # Update result matrix
-            if symmetric:
-                for i, j, distance in exact_results:
-                    result_matrix[i, j] = False if distance is None else distance <= 1
-                    result_matrix[j, i] = result_matrix[i, j]
-            else:
-                for i, j, distance in exact_results:
-                    result_matrix[i, j] = False if distance is None else distance <= 1
-            
-            if PROFILE:
-                update_time = time.perf_counter() - update_start
-                print(f"Matrix update time: {update_time:.3f}s")
+        if PROFILE:
+            exact_time = time.perf_counter() - exact_start
+            print(f"Exact calculation time: {exact_time:.3f}s")
+            update_start = time.perf_counter()
+        
+        # Update result matrix
+        if symmetric:
+            for i, j, distance in exact_results:
+                result_matrix[i, j] = False if distance is None else distance <= 1
+                result_matrix[j, i] = result_matrix[i, j]
+        else:
+            for i, j, distance in exact_results:
+                result_matrix[i, j] = False if distance is None else distance <= 1
+        
+        if PROFILE:
+            update_time = time.perf_counter() - update_start
+            print(f"Matrix update time: {update_time:.3f}s")
     
     if PROFILE:
         total_time = time.perf_counter() - total_start
@@ -263,7 +240,7 @@ def exact_mces_for_list_of_pairs(
     pairs: List[Tuple[int, int]], 
     n_jobs: int = -1, 
     batch_size: int = 20, 
-    threshold: int = -1, 
+    threshold: int = 10, 
     solver: str = "GUROBI"
 ) -> List[Tuple[int, int, int]]:
     """
@@ -341,6 +318,201 @@ def exact_mces_for_list_of_pairs(
     
     return all_results
 
+
+
+def construct_graph(smiles:str) -> nx.Graph:
+    """ 
+    Converts a SMILE into a graph
+     
+    Parameters
+    ----------
+    s : str 
+        Smile of the molecule
+        
+    Returns:
+    -------
+    networkx.classes.graph.Graph
+        Graph that represents the molecule.
+        The bond types are represented as edge weights.
+        The atom types are represented as atom attributes of the nodes.
+    """
+    #read the smile
+    m: Chem.Mol = Chem.MolFromSmiles(smiles) # type :ignore
+    # convert the molecule into a graph
+    if m is None:
+        raise ValueError(f"Invalid SMILES string: {smiles}")
+    # The bond and atom types are converted to node/edge attributes
+    G: nx.Graph = nx.Graph()
+    for atom in m.GetAtoms():
+        G.add_node(atom.GetIdx(), atom=atom.GetSymbol())
+    for bond in m.GetBonds():
+        G.add_edge(bond.GetBeginAtom().GetIdx(), bond.GetEndAtom().GetIdx(), weight=bond.GetBondTypeAsDouble())
+    return G
+
+
+
+def MCES_ILP(G1, G2, threshold, solver='default', solver_options={}, no_ilp_threshold=False):
+    """
+     Calculates the exact distance between two molecules using an ILP
+
+     Parameters
+     ----------
+     G1 : networkx.classes.graph.Graph
+         Graph representing the first molecule.
+     G2 : networkx.classes.graph.Graph
+         Graph representing the second molecule.
+     threshold : float
+         Threshold for the comparison. Exact distance is only calculated if the distance is lower than the threshold.
+     solver: string
+         ILP-solver used for solving MCES. Example:CPLEX_CMD
+     solver_options: dict
+         additional options to pass to solvers. Example: threads=1, msg=False for better multi-threaded performance
+     no_ilp_threshold: bool
+         if true, always return exact distance even if it is below the threshold (slower)
+
+     Returns:
+     -------
+     float
+         Distance between the molecules
+     int
+         Type of Distance:
+             1 : Exact Distance
+             2 : Lower bound (If the exact distance is above the threshold)
+
+    """
+
+    ILP=pulp.LpProblem("MCES", pulp.LpMinimize)
+
+    #Variables for nodepairs
+    nodepairs=[]
+    for i in G1.nodes:
+        for j in G2.nodes:
+            if G1.nodes[i]["atom"]==G2.nodes[j]["atom"]:
+                nodepairs.append(tuple([i,j]))
+    y=pulp.LpVariable.dicts('nodepairs', nodepairs,
+                            lowBound = 0,
+                            upBound = 1,
+                            cat = pulp.LpInteger)
+    #variables for edgepairs and weight
+    edgepairs=[]
+    w={}
+    for i in G1.edges:
+        for j in G2.edges:
+            if (G1.nodes[i[0]]["atom"]==G2.nodes[j[0]]["atom"] and G1.nodes[i[1]]["atom"]==G2.nodes[j[1]]["atom"]) or (G1.nodes[i[1]]["atom"]==G2.nodes[j[0]]["atom"] and G1.nodes[i[0]]["atom"]==G2.nodes[j[1]]["atom"]):
+                edgepairs.append(tuple([i,j]))
+                w[tuple([i,j])]=max(G1[i[0]][i[1]]["weight"],G2[j[0]][j[1]]["weight"])-min(G1[i[0]][i[1]]["weight"],G2[j[0]][j[1]]["weight"])
+
+    #variables for not mapping an edge
+    for i in G1.edges:
+        edgepairs.append(tuple([i,-1]))
+        w[tuple([i,-1])]=G1[i[0]][i[1]]["weight"]
+    for j in G2.edges:
+        edgepairs.append(tuple([-1,j]))
+        w[tuple([-1,j])]=G2[j[0]][j[1]]["weight"]
+    c=pulp.LpVariable.dicts('edgepairs', edgepairs,
+                            lowBound = 0,
+                            upBound = 1,
+                            cat = pulp.LpInteger)
+
+
+    #objective function
+    ILP += pulp.lpSum([ w[i]*c[i] for i in edgepairs])
+
+    #Every node in G1 can only be mapped to at most one in G2
+    for i in G1.nodes:
+        h=[]
+        for j in G2.nodes:
+            if G1.nodes[i]["atom"]==G2.nodes[j]["atom"]:
+                h.append(tuple([i,j]))
+        ILP+=pulp.lpSum([y[k] for k in h])<=1
+
+    #Every node in G1 can only be mapped to at most one in G1
+    for i in G2.nodes:
+        h=[]
+        for j in G1.nodes:
+            if G1.nodes[j]["atom"]==G2.nodes[i]["atom"]:
+                h.append(tuple([j,i]))
+        ILP+=pulp.lpSum([y[k] for k in h])<=1
+
+    #Every edge in G1 has to be mapped to an edge in G2 or the variable for not mapping has to be 1
+    for i in G1.edges:
+        ls=[]
+        rs=[]
+        for j in G2.edges:
+            if (G1.nodes[i[0]]["atom"]==G2.nodes[j[0]]["atom"] and G1.nodes[i[1]]["atom"]==G2.nodes[j[1]]["atom"]) or (G1.nodes[i[1]]["atom"]==G2.nodes[j[0]]["atom"] and G1.nodes[i[0]]["atom"]==G2.nodes[j[1]]["atom"]):
+                ls.append(tuple([i,j]))
+        ILP+=pulp.lpSum([c[k] for k in ls])+c[tuple([i,-1])]==1
+
+    #Every edge in G2 has to be mapped to an edge in G1 or the variable for not mapping has to be 1
+    for i in G2.edges:
+        ls=[]
+        rs=[]
+        for j in G1.edges:
+            if (G1.nodes[j[0]]["atom"]==G2.nodes[i[0]]["atom"] and G1.nodes[j[1]]["atom"]==G2.nodes[i[1]]["atom"]) or (G1.nodes[j[1]]["atom"]==G2.nodes[i[0]]["atom"] and G1.nodes[j[0]]["atom"]==G2.nodes[i[1]]["atom"]):
+                ls.append(tuple([j,i]))
+        ILP+=pulp.lpSum([c[k] for k in ls])+c[tuple([-1,i])]==1
+
+    #The mapping of the edges has to match the mapping of the nodes
+    for i in G1.nodes:
+        for j in G2.edges:
+            ls=[]
+            for k in G1.neighbors(i):
+                if tuple([tuple([i,k]),j]) in c:
+                    ls.append(tuple([tuple([i,k]),j]))
+                else:
+                    if  tuple([tuple([k,i]),j]) in c:
+                        ls.append(tuple([tuple([k,i]),j]))
+            rs=[]
+            if G1.nodes[i]["atom"]==G2.nodes[j[0]]["atom"]:
+                rs.append(tuple([i,j[0]]))
+            if G1.nodes[i]["atom"]==G2.nodes[j[1]]["atom"]:
+                rs.append(tuple([i,j[1]]))
+            ILP+=pulp.lpSum([c[k] for k in ls])<=pulp.lpSum([y[k] for k in rs])
+
+
+    for i in G2.nodes:
+        for j in G1.edges:
+            ls=[]
+            for k in G2.neighbors(i):
+                if tuple([j,tuple([i,k])]) in c:
+                    ls.append(tuple([j,tuple([i,k])]))
+                else:
+                    if tuple([j,tuple([k,i])]) in c:
+                        ls.append(tuple([j,tuple([k,i])]))
+            rs=[]
+            if G2.nodes[i]["atom"]==G1.nodes[j[0]]["atom"]:
+                rs.append(tuple([j[0],i]))
+            if G2.nodes[i]["atom"]==G1.nodes[j[1]]["atom"]:
+                rs.append(tuple([j[1],i]))
+            ILP+=pulp.lpSum([c[k] for k in ls])<=pulp.lpSum(y[k] for k in rs)
+
+    #constraint for the threshold
+    if threshold!=-1 and not no_ilp_threshold:
+        ILP +=pulp.lpSum([ w[i]*c[i] for i in edgepairs])<=threshold
+
+    #solve the ILP
+    if solver.lower()=="default":
+        sol= pulp.getSolver("PULP_CBC_CMD", msg=0,**solver_options)
+        ILP.solve()
+    elif solver.upper()=="GUROBI":
+        # ILP.solve(pulp.GUROBI(**solver_options))
+        sol:pulp.LpSolver=pulp.getSolver("GUROBI", **solver_options)
+        ILP.solve(sol)
+    elif solver.upper()=="CUOPT":
+        ILP.solve(pulp.CUOPT(msg=0))
+        print("CUOPT WAS USED")
+
+    else:
+        ILP.solve(pulp.PULP_CBC_CMD(msg=0,**solver_options))
+    if ILP.status==1:
+        val = ILP.objective.value()
+        if val is None:
+            return 0, 1
+        return float(ILP.objective.value()),1
+    else:
+        return threshold,2
+
+
 @contextmanager
 def suppress_output() -> Generator[None, None, None]:
     """Suppress stdout and stderr output for both terminal and notebook environments"""
@@ -408,17 +580,10 @@ if __name__ == "__main__":
     # smiles1 = nist_smiles
 
     # Example usage
-    start = perf_counter()
-    # with suppress_output():
-    result_matrix= are_very_distinct(smiles1, symmetric=True,batch_size=200,solver="GUROBI")
-    print(f"Time taken: {perf_counter() - start:.2f} seconds")
-    # start = time()
-    # with suppress_output():
-    #     result_matrix = are_very_distinct(smiles1,symmetric=False)
-    # print(f"Time taken: {time() - start:.2f} seconds")
-    # start = time()
-    # with suppress_output():
-    #     result_matrix = calculate_mces_distances(smiles1, smiles2)
-    # print(f"Time taken: {time() - start:.2f} seconds")
 
-    # print(result_matrix)
+    start = perf_counter()
+    with suppress_output():
+        result_matrix = calculate_mces_distances(smiles1, smiles2)
+    print(f"Time taken: {perf_counter() - start:.2f} seconds")
+
+    print(result_matrix)
