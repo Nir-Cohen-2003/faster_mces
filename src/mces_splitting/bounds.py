@@ -4,7 +4,8 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 from collections import defaultdict
-from fast_mces_lower_bound import calculate_symmetric_distance_matrix
+from fast_mces_lower_bound import calculate_symmetric_distance_matrix, calculate_distance_matrix
+
 def filter1(G1: nx.Graph, G2: nx.Graph) -> float:
     """
      Finds a lower bound for the distance based on degree
@@ -212,161 +213,6 @@ def filter2_from_lib(G1: nx.Graph, G2: nx.Graph):
 
     return res
 
-def filter2_batch(graphs_list1, graphs_list2=None):
-    """
-    Batch processing version for computing many pairwise distances efficiently.
-    This is optimized for all-to-all comparisons of molecule lists.
-    
-    Parameters
-    ----------
-    graphs_list1 : list of networkx.Graph
-        First set of molecular graphs
-    graphs_list2 : list of networkx.Graph, optional
-        Second set of molecular graphs. If None, computes all-to-all within graphs_list1
-        
-    Returns
-    -------
-    numpy.ndarray
-        Distance matrix where result[i,j] is the distance between graphs_list1[i] and graphs_list2[j]
-        (or graphs_list1[j] if graphs_list2 is None)
-    """
-
-    
-    if graphs_list2 is None:
-        graphs_list2 = graphs_list1
-        symmetric = True
-    else:
-        symmetric = False
-    
-    n1, n2 = len(graphs_list1), len(graphs_list2)
-    
-    # Pre-compute all graph data
-    all_graph_data = {}
-    
-    def precompute_graph(G, graph_id):
-        atom_types = defaultdict(list)
-        neighbor_data = {}
-        
-        for node in G.nodes():
-            atom = G.nodes[node]["atom"]
-            atom_types[atom].append(node)
-            
-            neighbors = list(G.neighbors(node))
-            if neighbors:
-                weights = [G[node][n]['weight'] for n in neighbors]
-                atoms = [G.nodes[n]['atom'] for n in neighbors]
-                
-                # Group by atom type and sort immediately
-                atom_weights = defaultdict(list)
-                for w, a in zip(weights, atoms):
-                    atom_weights[a].append(w)
-                
-                # Sort once
-                for a in atom_weights:
-                    atom_weights[a].sort(reverse=True)
-                
-                neighbor_data[node] = {
-                    'atom_weights': dict(atom_weights),
-                    'total_weight': sum(weights) / 2
-                }
-            else:
-                neighbor_data[node] = {
-                    'atom_weights': {},
-                    'total_weight': 0.0
-                }
-        
-        all_graph_data[graph_id] = {
-            'atom_types': dict(atom_types),
-            'neighbor_data': neighbor_data
-        }
-    # Pre-compute all graphs
-    for i, G in enumerate(graphs_list1):
-        precompute_graph(G, f"1_{i}")
-    
-    if not symmetric:
-        for i, G in enumerate(graphs_list2):
-            precompute_graph(G, f"2_{i}")
-    
-    def fast_node_cost(node1, data1, node2, data2):
-        """Fast node cost using pre-sorted data."""
-        nd1 = data1['neighbor_data'][node1]
-        nd2 = data2['neighbor_data'][node2]
-        
-        atom_weights1 = nd1['atom_weights']
-        atom_weights2 = nd2['atom_weights']
-        
-        cost = 0.0
-        all_atoms = set(atom_weights1.keys()) | set(atom_weights2.keys())
-        
-        for atom in all_atoms:
-            weights1 = atom_weights1.get(atom, [])
-            weights2 = atom_weights2.get(atom, [])
-            
-            n = min(len(weights1), len(weights2))
-            cost += sum(abs(w1 - w2) / 2 for w1, w2 in zip(weights1[:n], weights2[:n]))
-            cost += sum(weights1[n:]) / 2 + sum(weights2[n:]) / 2
-        
-        return cost
-    
-    def compute_single_pair(data1, data2):
-        """Compute distance between two pre-processed graphs."""
-        total_cost = 0.0
-        all_types = set(data1['atom_types'].keys()) | set(data2['atom_types'].keys())
-        
-        for atom_type in all_types:
-            nodes1 = data1['atom_types'].get(atom_type, [])
-            nodes2 = data2['atom_types'].get(atom_type, [])
-            
-            if not nodes1:
-                total_cost += sum(data2['neighbor_data'][n2]['total_weight'] for n2 in nodes2)
-                continue
-                
-            if not nodes2:
-                total_cost += sum(data1['neighbor_data'][n1]['total_weight'] for n1 in nodes1)
-                continue
-            
-            n1, n2 = len(nodes1), len(nodes2)
-            max_size = max(n1, n2)
-            
-            cost_matrix = np.zeros((max_size, max_size))
-            
-            for i, node1 in enumerate(nodes1):
-                for j, node2 in enumerate(nodes2):
-                    cost_matrix[i, j] = fast_node_cost(node1, data1, node2, data2)
-            
-            # Fill dummy costs
-            if n1 < n2:
-                for i in range(n1, max_size):
-                    for j, node2 in enumerate(nodes2):
-                        cost_matrix[i, j] = data2['neighbor_data'][node2]['total_weight']
-            elif n2 < n1:
-                for i, node1 in enumerate(nodes1):
-                    for j in range(n2, max_size):
-                        cost_matrix[i, j] = data1['neighbor_data'][node1]['total_weight']
-            
-            row_ind, col_ind = linear_sum_assignment(cost_matrix)
-            assignment_cost = cost_matrix[row_ind, col_ind].sum()
-            total_cost += assignment_cost
-        
-        return total_cost
-    
-    # Compute results
-    results = np.zeros((n1, n2))
-    
-    for i in range(n1):
-        start_j = i if symmetric else 0
-        for j in range(start_j, n2):
-            data1 = all_graph_data[f"1_{i}"]
-            data2 = all_graph_data[f"2_{j}"] if not symmetric else all_graph_data[f"1_{j}"]
-            
-            distance = compute_single_pair(data1, data2)
-            results[i, j] = distance
-            
-            if symmetric and i != j:
-                results[j, i] = distance
-    
-    return results
-
 def mces_lower_bound_symmetric(smiles_list:Sequence[str]) -> NDArray:
     """
     Wrapper for the fast C++ MCES bounds calculation using SMILES strings directly.
@@ -387,6 +233,26 @@ def mces_lower_bound_symmetric(smiles_list:Sequence[str]) -> NDArray:
     # symmetric_distance_matrix is expected to be a flat list or 1D numpy array of length n*n
     n = int(np.sqrt(len(symmetric_distance_matrix)))
     return np.array(symmetric_distance_matrix).reshape((n, n))
+
+def mces_lower_bound(smiles_list1: Sequence[str], smiles_list2: Sequence[str]) -> NDArray:
+    """
+    Wrapper for the fast C++ MCES bounds calculation using SMILES strings directly.
+    This uses the optimized C++ implementation with parallel processing.
+
+    Parameters
+    ----------
+    smiles_list1 : list of str
+        List of SMILES strings representing molecules
+    smiles_list2 : list of str
+        List of SMILES strings representing molecules
+
+    Returns
+    -------
+    numpy.ndarray
+        Symmetric distance matrix where result[i,j] is the distance between molecules i and j
+    """
+    distance_matrix = calculate_distance_matrix(smiles_list1, smiles_list2)
+    return distance_matrix
 
 if __name__ == "__main__":
     import sys

@@ -3,14 +3,15 @@ from numpy.typing import NDArray
 import polars as pl
 import os
 from multiprocessing import cpu_count
-from joblib import Parallel, delayed, parallel_backend
-from typing import List, Optional, Generator, Iterable, Tuple
+from typing import List, Optional, Generator, Iterable, Tuple, Dict
 from itertools import batched, chain
 from contextlib import contextmanager
 import sys
-from .par import _calculate_bounds_batch, _calculate_exact_batch, _calculate_distinct_batch
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from .graph_construction import construct_graph
+from .bounds import mces_lower_bound, mces_lower_bound_symmetric
+from functools import lru_cache
 
 if __name__ == "__main__":
     PROFILE = True
@@ -19,7 +20,7 @@ else:
     
 def calculate_mces_distances(
         smiles_list1: List[str], smiles_list2: Optional[List[str]] = None,
-        n_jobs: int = -1, symmetric: bool = False, batch_size: int = 20, threshold: int = -1, solver: str = "GUROBI") -> NDArray[np.int64]:
+        n_jobs: int = -1, batch_size: int = 20, threshold: int = 10, solver: str = "GUROBI") -> NDArray[np.int64]:
     """
     Efficiently computes exact MCES distances between all pairs of molecules.
     
@@ -42,146 +43,21 @@ def calculate_mces_distances(
     np.ndarray
         Matrix where element [i,j] is the exact MCES distance between molecules i and j
     """
+    assert threshold > 0
+    assert smiles_list1 is not None and len(smiles_list1) > 0, "smiles_list1 is empty"
+    if smiles_list2 is None:
+        symmetric = True
+    else:
+        symmetric = False
+        assert len(smiles_list2) > 0, "smiles_list2 is empty"
+
+
     if PROFILE:
         total_start = time.perf_counter()
         print("\n=== Profiling calculate_mces_distances ===")
     
     if n_jobs == -1:
         n_jobs: int = cpu_count()
-
-    # Handle symmetric case
-    if symmetric:
-        smiles_list2: List[str] = smiles_list1
-    elif smiles_list2 is None:
-        raise ValueError("smiles_list2 must be provided when symmetric=False")
-    
-    if PROFILE:
-        setup_start = time.perf_counter()
-    
-    # Generate appropriate pairs
-    if symmetric:
-        all_pairs: List[tuple[int, int]] = [(i, j) for i in range(len(smiles_list1)) for j in range(i+1, len(smiles_list2))]
-    else:
-        all_pairs: List[tuple[int, int]] = [(i, j) for i in range(len(smiles_list1)) for j in range(len(smiles_list2))]
-    
-    # Create batches of pairs to process together
-    batches = batched(all_pairs, batch_size)
-    
-    # Initialize distance matrix with infinity
-    distance_matrix = np.full((len(smiles_list1), len(smiles_list2)), np.inf)
-    if symmetric:
-        # Set diagonal to 0 for symmetric case
-        np.fill_diagonal(distance_matrix, 0)
-    
-    if PROFILE:
-        setup_time = time.perf_counter() - setup_start
-        print(f"Setup time: {setup_time:.3f}s")
-        bounds_start = time.perf_counter()
-    
-    # Use persistent worker pool for all parallel operations
-    with parallel_backend('loky', n_jobs=n_jobs):
-        # Calculate filter2 bounds for batches of pairs
-        batch_results = Parallel(batch_size="auto")(
-            delayed(_calculate_bounds_batch)(smiles_list1, smiles_list2, batch) for batch in batches
-        )
-        
-        # Flatten batch results
-        bounds_results = [item for sublist in batch_results for item in sublist]
-        
-        if PROFILE:
-            bounds_time = time.perf_counter() - bounds_start
-            print(f"Bounds calculation time: {bounds_time:.3f}s")
-            update_start = time.perf_counter()
-        
-        # Use bounds as initial estimates
-        if symmetric:
-            for i, j, bound in bounds_results:
-                distance_matrix[i, j] = bound
-                distance_matrix[j, i] = bound
-        else:
-            for i, j, bound in bounds_results:
-                distance_matrix[i, j] = bound
-        
-        if PROFILE:
-            update_time = time.perf_counter() - update_start
-            print(f"Bounds update time: {update_time:.3f}s")
-            exact_start = time.perf_counter()
-        
-        # Filter pairs that need exact calculation based on bounds and threshold
-        if threshold > 0:
-            pairs_needing_exact = [(i, j) for i, j, bound in bounds_results if bound < threshold]
-            if PROFILE:
-                print(f"Pairs needing exact calculation: {len(pairs_needing_exact)} out of {len(bounds_results)}")
-            
-            if len(pairs_needing_exact) > 0:
-                # Create batches for exact computation
-                exact_batches = batched(pairs_needing_exact, batch_size)
-                
-                # Calculate exact distances in batches
-                exact_batch_results = Parallel(batch_size="auto")(
-                    delayed(_calculate_exact_batch)(smiles_list1, smiles_list2, batch, threshold, solver) for batch in exact_batches
-                )
-            else:
-                exact_batch_results = []
-        else:
-            # Calculate exact distances for all pairs if no threshold
-            exact_batch_results = Parallel(batch_size="auto")(
-                delayed(_calculate_exact_batch)(smiles_list1, smiles_list2, batch, threshold, solver) for batch in batches
-            )
-        
-        # Flatten batch results
-        exact_results = [item for sublist in exact_batch_results for item in sublist]
-        
-        if PROFILE:
-            exact_time = time.perf_counter() - exact_start
-            print(f"Exact calculation time: {exact_time:.3f}s")
-            final_update_start = time.perf_counter()
-        
-        # Update distance matrix with exact results
-        for i, j, distance in exact_results:
-            distance_matrix[i, j] = distance
-            if symmetric:
-                distance_matrix[j, i] = distance
-    
-    if PROFILE:
-        final_update_time = time.perf_counter() - final_update_start
-        total_time = time.perf_counter() - total_start
-        print(f"Final update time: {final_update_time:.3f}s")
-        print(f"Total time: {total_time:.3f}s")
-        print("=" * 40)
-    
-    return distance_matrix
-
-def are_close_mols(smiles_list1: List[str], smiles_list2: Optional[List[str]] = None, 
-                  n_jobs: int = -1, symmetric: bool = False, batch_size: int = 20, solver: str = "GUROBI") -> np.ndarray:
-    """
-    Efficiently computes whether each pair of molecules has an MCES distance of 1 or lower.
-    
-    Parameters
-    ----------
-    smiles_list1 : list
-        List of SMILES strings for the first set of molecules
-    smiles_list2 : list or None
-        List of SMILES strings for the second set of molecules.
-        If None and symmetric=True, will compare molecules within smiles_list1.
-    n_jobs : int
-        Number of parallel jobs to run. -1 means use all available cores.
-    symmetric : bool
-        If True, optimize for comparing molecules within the same list.
-    batch_size : int
-        Number of pairs to process in each parallel job to reduce overhead.
-        
-    Returns
-    -------
-    numpy.ndarray
-        Boolean matrix where element [i,j] is True if molecules i and j have MCES distance ≤ 1
-    """
-    if PROFILE:
-        total_start = time.perf_counter()
-        print(f"\n=== Profiling are_close_mols ===")
-    
-    if n_jobs == -1:
-        n_jobs = cpu_count()
 
     # Handle symmetric case
     if symmetric:
@@ -192,50 +68,146 @@ def are_close_mols(smiles_list1: List[str], smiles_list2: Optional[List[str]] = 
     if PROFILE:
         setup_start = time.perf_counter()
     
-    # Generate appropriate pairs - directly using indices to avoid preloading graphs
+    # Compute filter2 bounds for all pairs using available bound functions (mirrors are_close_mols structure)
     if symmetric:
-        all_pairs = [(i, j) for i in range(len(smiles_list1)) for j in range(i+1, len(smiles_list2))]
+        bounds_results = mces_lower_bound_symmetric(smiles_list1)
     else:
-        all_pairs = [(i, j) for i in range(len(smiles_list1)) for j in range(len(smiles_list2))]
-    
-    # Create batches of pairs to process together
-    batches = batched(all_pairs, batch_size)
-    
+        bounds_results = mces_lower_bound(smiles_list1, smiles_list2)  # type: ignore
+
+    # Initialize distance matrix with bounds as initial estimates
+    distance_matrix = bounds_results
+
     if PROFILE:
         setup_time = time.perf_counter() - setup_start
         print(f"Setup time: {setup_time:.3f}s")
-        bounds_start = time.perf_counter()
-    
-    # Use persistent worker pool for all parallel operations
-    with parallel_backend('loky', n_jobs=n_jobs):
-        # Calculate filter2 bounds for batches of pairs
-        batch_results = Parallel(batch_size="auto")(
-            delayed(_calculate_bounds_batch)(smiles_list1, smiles_list2, batch) for batch in batches
-        )
+        bounds_time = 0.0
+        print(f"Bounds calculation done (shape {distance_matrix.shape})")
+
+
+    selected_idx = np.argwhere(distance_matrix < threshold)
+    if symmetric:
+        # keep only i<j
+        selected_idx = selected_idx[selected_idx[:, 0] < selected_idx[:, 1]]
         
-        # Flatten batch results
-        bounds_results = list(chain(*batch_results))
-        
-        if PROFILE:
-            bounds_time = time.perf_counter() - bounds_start
-            print(f"Bounds calculation time: {bounds_time:.3f}s")
-            filter_start = time.perf_counter()
-        
-        # Initialize result matrix
+    pairs_needing_exact: List[Tuple[int, int]] = [tuple(x) for x in selected_idx.tolist()]
+
+    if PROFILE:
+        print(f"Pairs needing exact calculation: {len(pairs_needing_exact)} out of {distance_matrix.size}")
+
+    exact_results: List[Tuple[int, int, int]] = []
+    if len(pairs_needing_exact) > 0:
+        # create batches and run exact computation in parallel
+        exact_batches = list(batched(pairs_needing_exact, batch_size))
+        with ProcessPoolExecutor(max_workers=n_jobs) as executor:
+            future_to_batch = {
+                executor.submit(_calculate_exact_batch, smiles_list1, smiles_list2, batch, threshold, solver): batch for batch in exact_batches
+            }
+            exact_batch_results = []
+            for future in as_completed(future_to_batch):
+                batch = future_to_batch[future]
+                try:
+                    exact_batch_results.append(future.result())
+                except Exception as e:
+                    print(f"Error processing exact batch {batch}: {e}")
+                    fallback = [(i, j, None) for i, j in batch]
+                    exact_batch_results.append(fallback)
+            exact_results = [item for sublist in exact_batch_results for item in sublist]
+
+    if PROFILE:
+        print(f"Exact calculation completed, updating matrix")
+
+    # Update distance matrix with exact results
+    for i, j, distance in exact_results:
+        distance_matrix[i, j] = distance
         if symmetric:
-            result_matrix = np.eye(len(smiles_list1), dtype=bool)
-        else:
-            result_matrix = np.zeros((len(smiles_list1), len(smiles_list2)), dtype=bool)
-        
-        # Only perform expensive ILP computation on potential matches
-        pairs_needing_ilp = [(i, j) for i, j, bound in bounds_results if bound < 2]
-        
+            distance_matrix[j, i] = distance
+
+    if PROFILE:
+        total_time = time.perf_counter() - total_start
+        print(f"Total time: {total_time:.3f}s")
+        print("=" * 40)
+    
+    return distance_matrix
+
+def are_close_mols(
+    smiles_list1: List[str], 
+    smiles_list2: Optional[List[str]] = None, 
+    *, 
+    n_jobs: int = -1, 
+    batch_size: int = 20, 
+    solver: str = "GUROBI",
+    symmetric: bool = False) -> np.ndarray:
+    """
+    Efficiently computes whether each pair of molecules has an MCES distance of 1 or lower.
+
+    First two arguments (smiles_list1, smiles_list2) can be passed positionally or by keyword.
+    All other arguments are keyword-only.
+    
+    Parameters
+    ----------
+    smiles_list1 : list
+    List of SMILES strings for the first set of molecules
+    smiles_list2 : list or None
+    List of SMILES strings for the second set of molecules.
+    If None and symmetric=True, will compare molecules within smiles_list1.
+    n_jobs : int
+    Number of parallel jobs to run. -1 means use all available cores.
+    symmetric : bool
+    If True, optimize for comparing molecules within the same list.
+    batch_size : int
+    Number of pairs to process in each parallel job to reduce overhead.
+    
+    Returns
+    -------
+    numpy.ndarray   
+    Boolean matrix where element [i,j] is True if molecules i and j have MCES distance ≤ 1
+    """
+
+    assert len(smiles_list1) > 0, "smiles_list1 is empty"
+    if smiles_list2 is None:
+        symmetric = True
+    else:
+        symmetric = False
+        assert len(smiles_list2) > 0, "smiles_list2 is empty"
+    if PROFILE:
+        total_start = time.perf_counter()
+        print("\n=== Profiling are_close_mols ===")
+    
+    if n_jobs == -1:
+        n_jobs = cpu_count()
+
+    # Handle symmetric case
+    if symmetric:
+        smiles_list2 = smiles_list1
+
+    if symmetric:
+    # Calculate filter2 bounds for all pairs in symmetric case
+        bounds_results = mces_lower_bound_symmetric(smiles_list1)
+    else:
+        bounds_results = mces_lower_bound(smiles_list1, smiles_list2) #type: ignore
+
+
+    # Only perform expensive ILP computation on potential matches
+    # Determine which pairs need the expensive ILP: bound <= 1
+
+    # the bounds results are a square numpy array
+    mask = bounds_results <= 1.0
+    result_matrix = mask # if the bound is more than 1, then they are not close, now  we will iterate over anywhere the vbound is kess than 1 and fill in the truth
+    
+    selected = np.argwhere(mask)
+    if selected.size > 0:
+    #now, if it symmetric we remove all redundant pairs
+        if symmetric:
+            selected = selected[selected[:, 0] < selected[:, 1]]
+
+        # Convert to list of tuples 
+        pairs_needing_ilp = [tuple(x) for x in selected.tolist()]
+
         if PROFILE:
-            filter_time = time.perf_counter() - filter_start
-            print(f"Filtering time: {filter_time:.3f}s")
             print(f"Pairs needing ILP: {len(pairs_needing_ilp)} out of {len(bounds_results)}")
-        
-        if len(pairs_needing_ilp) > 0:
+    
+        with ProcessPoolExecutor(max_workers=n_jobs) as executor:
+
             if PROFILE:
                 exact_start = time.perf_counter()
             
@@ -243,9 +215,18 @@ def are_close_mols(smiles_list1: List[str], smiles_list2: Optional[List[str]] = 
             ilp_batches = batched(pairs_needing_ilp, batch_size)
             
             # Calculate exact results in batches - pass SMILES lists instead of precomputed graphs
-            exact_batch_results = Parallel(batch_size="auto")(
-                delayed(_calculate_exact_batch)(smiles_list1, smiles_list2, batch, 2, solver) for batch in ilp_batches
-            )
+            future_to_batch = {
+            executor.submit(_calculate_exact_batch, smiles_list1, smiles_list2, batch, 2, solver): batch for batch in ilp_batches
+            }
+            exact_batch_results = []
+            for future in as_completed(future_to_batch):
+                batch = future_to_batch[future]
+            try:
+                exact_batch_results.append(future.result())
+            except Exception as e:
+                print(f"Error processing exact batch {batch}: {e}")
+                fallback = [(i, j, None) for i, j in batch]
+                exact_batch_results.append(fallback)
             
             # Flatten batch results
             exact_results = list(chain(*exact_batch_results))
@@ -263,122 +244,6 @@ def are_close_mols(smiles_list1: List[str], smiles_list2: Optional[List[str]] = 
             else:
                 for i, j, distance in exact_results:
                     result_matrix[i, j] = False if distance is None else distance <= 1
-            
-            if PROFILE:
-                update_time = time.perf_counter() - update_start
-                print(f"Matrix update time: {update_time:.3f}s")
-    
-    if PROFILE:
-        total_time = time.perf_counter() - total_start
-        print(f"Total time: {total_time:.3f}s")
-        print("=" * 40)
-    
-    return result_matrix
-
-def are_very_distinct(smiles_list1: List[str], smiles_list2: Optional[List[str]] = None,
-                     n_jobs: int = -1, symmetric: bool = False, batch_size: int = 20, solver: str = "GUROBI", use_solver: bool = True, distinction_threshold: int = 10) -> np.ndarray:
-    """
-    Efficiently computes whether each pair of molecules has an MCES distance greater than 10.
-    
-    Parameters as in are_close_mols.
-    if we set use_solver=False, we will not use the solver to compute the distances, but rather use a fast filter2 bound
-     and return the results it gives, even if they are "worse", meaning 2 molecules that might be distinct (mces>10) will not be detected as such.
-    """
-    if PROFILE:
-        total_start = time.perf_counter()
-        print(f"\n=== Profiling are_very_distinct ===")
-    
-    if n_jobs == -1:
-        n_jobs = cpu_count()
-    
-    # Handle symmetric case
-    if symmetric:
-        smiles_list2 = smiles_list1
-    elif smiles_list2 is None:
-        raise ValueError("smiles_list2 must be provided when symmetric=False")
-    
-    if PROFILE:
-        setup_start = time.perf_counter()
-    
-    # Generate appropriate pairs - directly using indices
-    if symmetric:
-        all_pairs = [(i, j) for i in range(len(smiles_list1)) for j in range(i+1, len(smiles_list2))]
-    else:
-        all_pairs = [(i, j) for i in range(len(smiles_list1)) for j in range(len(smiles_list2))]
-    
-    # Create batches of pairs to process together
-    batches = [all_pairs[i:i+batch_size] for i in range(0, len(all_pairs), batch_size)]
-    
-    if PROFILE:
-        setup_time = time.perf_counter() - setup_start
-        print(f"Setup time: {setup_time:.3f}s")
-        bounds_start = time.perf_counter()
-    
-    # Use persistent worker pool for all parallel operations
-    with parallel_backend('loky', n_jobs=n_jobs):
-        # Calculate filter2 bounds for batches of pairs
-        batch_results = Parallel(batch_size="auto")(
-            delayed(_calculate_bounds_batch)(smiles_list1, smiles_list2, batch) for batch in batches
-        )
-        
-        # Flatten batch results
-        bounds_results = [item for sublist in batch_results for item in sublist]
-        
-        if PROFILE:
-            bounds_time = time.perf_counter() - bounds_start
-            print(f"Bounds calculation time: {bounds_time:.3f}s")
-            filter_start = time.perf_counter()
-        
-        # Initialize result matrix
-        result_matrix = np.zeros((len(smiles_list1), len(smiles_list2)), dtype=bool)
-        
-        # Use NumPy vectorization:
-        indices = np.array([(i, j) for i, j, bound in bounds_results if bound > distinction_threshold])
-        if indices.size > 0:
-            result_matrix[indices[:, 0], indices[:, 1]] = True
-            if symmetric:
-                result_matrix[indices[:, 1], indices[:, 0]] = True
-        if not use_solver: # then we don't do the exact mces calc
-            if PROFILE:
-                filter_time = time.perf_counter() - filter_start
-                print(f"Filtering time: {filter_time:.3f}s")
-                print(f"Pairs needing ILP: {len(bounds_results)} out of {len(all_pairs)}")
-            return result_matrix
-        # Only perform expensive ILP computation on potential non-distinct pairs
-        bounds_array = np.array(bounds_results)
-        mask = bounds_array[:, 2] <= distinction_threshold
-        pairs_needing_ilp = bounds_array[mask, :2].astype(int).tolist()
-        
-        if PROFILE:
-            filter_time = time.perf_counter() - filter_start
-            print(f"Filtering time: {filter_time:.3f}s")
-            print(f"Pairs needing ILP: {len(pairs_needing_ilp)} out of {len(bounds_results)}")
-        
-        if len(pairs_needing_ilp) > 0:
-            if PROFILE:
-                exact_start = time.perf_counter()
-            
-            # Create batches for ILP computation
-            ilp_batches = [pairs_needing_ilp[i:i+batch_size] for i in range(0, len(pairs_needing_ilp), batch_size)]
-            
-            # Process exact calculations in batches - create a custom function for distinct calculations
-            exact_batch_results = Parallel(batch_size="auto")(
-                delayed(_calculate_distinct_batch)(smiles_list1, smiles_list2, batch, solver) for batch in ilp_batches
-            )
-            
-            # Flatten batch results
-            exact_results = [item for sublist in exact_batch_results for item in sublist]
-            
-            if PROFILE:
-                exact_time = time.perf_counter() - exact_start
-                print(f"Exact calculation time: {exact_time:.3f}s")
-                update_start = time.perf_counter()
-            
-            # Update result matrix
-            for i, j, is_distinct in exact_results:
-                result_matrix[i, j] = is_distinct
-                if symmetric:
-                    result_matrix[j, i] = is_distinct
             
             if PROFILE:
                 update_time = time.perf_counter() - update_start
@@ -428,7 +293,7 @@ def exact_mces_for_list_of_pairs(
     """
     if PROFILE:
         total_start = time.perf_counter()
-        print(f"\n=== Profiling exact_mces_for_list_of_pairs ===")
+        print("\n=== Profiling exact_mces_for_list_of_pairs ===")
     
     if n_jobs == -1:
         n_jobs = cpu_count()
@@ -500,6 +365,39 @@ def suppress_output() -> Generator[None, None, None]:
         sys.stderr = old_stderr
         # Close the dummy stream
         devnull_w.close()
+
+@lru_cache(maxsize=None)
+def _cached_construct_graph(smiles: str) -> nx.Graph:
+    return construct_graph(smiles)
+# Process exact calculations in batches
+def _calculate_exact_batch(smiles_list1: List[str], smiles_list2: List[str], batch_pairs: List[Tuple[int, int]], threshold: int, solver="default") -> List[Tuple[int, int, int]]:
+    '''this function is used to calculate the exact MCES distance in batches.
+    if the distance is greater than the threshold, it will return the threshold value.
+    if the distance is less than the threshold, it will return the distance value.
+    if the computation fails, it will return None.
+    The function will return a list of tuples, where each tuple contains the indices of the two molecules and the distance value.
+    '''
+    with suppress_output():
+        results = []
+        for i, j in batch_pairs:
+            # Load graphs on-demand
+            g1: nx.Graph = _cached_construct_graph(smiles_list1[i])
+            g2: nx.Graph = _cached_construct_graph(smiles_list2[j])
+            try:
+                distance, _ = MCES_ILP(g1, g2, threshold=threshold, solver=solver)
+            except Exception as e:
+                # Handle errors gracefully (including GurobiError)
+                if "Gurobi" in str(type(e)) or "gurobi" in str(e).lower():
+                    print(f"GurobiError for pair ({i}, {j}): {e}")
+                else:
+                    print(f"Error for pair ({i}, {j}): {e}")
+                distance = None
+            results.append((i, j, distance))
+    return results
+
+
+
+
 
 
 if __name__ == "__main__":

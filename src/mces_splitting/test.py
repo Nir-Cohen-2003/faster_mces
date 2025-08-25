@@ -1,4 +1,4 @@
-import fast_mces_lower_bound
+from fast_mces_lower_bound import calculate_distance_matrix, calculate_symmetric_distance_matrix
 import numpy as np
 # Example SMILES list
 smiles_list = [
@@ -19,7 +19,7 @@ smiles_list = [
 print(np.array([1]))
 
 # Run symmetric distance matrix
-sym_matrix = fast_mces_lower_bound.calculate_symmetric_distance_matrix(smiles_list)
+sym_matrix = calculate_symmetric_distance_matrix(smiles_list)
 print("Symmetric distance matrix:", sym_matrix)
 # print the type of what we got, and assert that it's a flattened list. print also the inner type
 print("Type of sym_matrix:", type(sym_matrix))
@@ -37,3 +37,21 @@ print("Formatted symmetric distance matrix: \n", sym_matrix)
 assert np.all(sym_matrix >= 0), "Negative value found in symmetric distance matrix"
 # print the maximal value
 print("Max value in symmetric distance matrix:", np.max(sym_matrix))
+
+# Run non-symmetric distance matrix
+matrix = calculate_distance_matrix(smiles_list,smiles_list)
+print("Non-symmetric distance matrix:", matrix)
+# print the type of what we got, and assert that it's a flattened list. print also the inner type
+print("Type of matrix:", type(matrix))
+if len(matrix) > 0:
+    print("Type of elements in matrix:", type(matrix[0]))
+assert isinstance(matrix, list), "matrix is not a list"
+assert all(isinstance(x, (float)) for x in matrix), "matrix contains non-numeric elements"
+
+# now format it as a square numpy array
+matrix = np.array(matrix, dtype=float).reshape((len(smiles_list), len(smiles_list)))
+print("Formatted non-symmetric distance matrix: \n", matrix)
+# make sure all values are >= 0
+assert np.all(matrix >= 0), "Negative value found in non-symmetric distance matrix"
+# print the maximal value
+print("Max value in non-symmetric distance matrix:", np.max(matrix))
