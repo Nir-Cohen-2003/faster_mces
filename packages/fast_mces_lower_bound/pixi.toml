@@ -20,11 +20,7 @@ version = "1.0.0"
 authors = ["Nir Cohen"]
 
 [package.build]
-backend = { name = "pixi-build-cmake", version = "*", channels = [
-  "https://prefix.dev/pixi-build-backends",
-  "https://prefix.dev/conda-forge",
-  "conda-forge",
-]}
+backend = { name = "pixi-build-cmake", version = "0.3.*"}
 [package.build.config]
 # The rdkit args are needed, since cmake wasn't able to find the rdkit paths by itself, and needs them to be given 
 extra-args = [
