@@ -3,8 +3,13 @@ authors = ["Nir"]
 channels = ["https://prefix.dev/conda-forge","https://prefix.dev/nir-cohen"]
 name = "mces_splitting"
 platforms = ["linux-64"]
-version = "0.3.0"
 preview = ["pixi-build"]
+    
+[package]
+name = "mces_splitting"
+version = "0.3.0"
+authors = ["Nir"]
+description = "MCES-based dataset splitting"
 
 [tasks]
 splitting_test = "python -m src.mces_splitting.dataset_splitting"
@@ -20,11 +25,6 @@ hrms_utils = ">=0.6.2"
 [pypi-dependencies]
 ipykernel = "*"
 
-[package]
-name = "mces_splitting"
-version = "0.2.0"
-authors = ["Nir"]
-description = "MCES-based dataset splitting"
 
 [package.build] 
 backend = { name = "pixi-build-python", version = ">=0.3.2" }

@@ -2474,7 +2474,7 @@ packages:
   requires_python: '>=3.8'
 - conda: .
   name: mces_splitting
-  version: 0.2.0
+  version: 0.3.0
   build: pyh4616a5c_0
   subdir: noarch
   depends:
@@ -2488,7 +2488,7 @@ packages:
   - python
   - python *
   input:
-    hash: 2ac3d43c5664aeb0c75f9246e02da3387f6b922f83a7a5113d66063637e7d077
+    hash: 89181eca3515ed831f5a5b30e6d3fa0ac4733e9f36beab4548f1e12ec52aac46
     globs:
     - pyproject.toml
 - conda: https://prefix.dev/conda-forge/linux-64/ms_entropy-1.3.4-py312h4f23490_1.conda
