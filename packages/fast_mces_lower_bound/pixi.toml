@@ -38,7 +38,14 @@ extra-args = [
 ]
 
 [workspace.build-variants]
-python = ["3.12.*", "3.13.*"]
+python = [
+  "3.9.*", 
+  "3.10.*", 
+  "3.11.*",
+  "3.12.*", 
+  "3.13.*",
+  "3.14.*"
+  ]
 
 [package.host-dependencies]
 nanobind = ">=2.4.0"
