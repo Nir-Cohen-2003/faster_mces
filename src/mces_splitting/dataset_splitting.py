@@ -310,23 +310,49 @@ def try_split_with_threshold(
     large_clusters = [c for c in cluster_list if len(c) > large_cluster_threshold]
     small_clusters = [c for c in cluster_list if len(c) <= large_cluster_threshold]
     
+    # Put large clusters in train
     for cluster in large_clusters:
         train_indices.extend(cluster)
     
-    current_set = 0
+    # Calculate remaining needed for validation and test
+    remaining_molecules = n - len(train_indices)
+    target_validation = validation_size
+    target_test = test_size
+    
+    # Sort small clusters by size (smallest first) for better packing
+    small_clusters.sort(key=len)
+    
+    # First, try to fill validation and test sets completely
     for cluster in small_clusters:
         cluster_size = len(cluster)
-        if current_set == 0 and len(test_indices) + cluster_size <= test_size * 1.1:
-            test_indices.extend(cluster)
-            current_set = 1
-        elif current_set == 1 and len(validation_indices) + cluster_size <= validation_size * 1.1:
-            validation_indices.extend(cluster)
-            current_set = 2
-        elif current_set == 2:
-            train_indices.extend(cluster)
-            current_set = 0
+        
+        # Prioritize whichever set needs more molecules
+        if len(validation_indices) < target_validation and len(test_indices) < target_test:
+            # Both need molecules - add to whichever has more room
+            val_room = target_validation - len(validation_indices)
+            test_room = target_test - len(test_indices)
+            
+            if val_room >= test_room and cluster_size <= val_room * 1.1:
+                validation_indices.extend(cluster)
+            elif cluster_size <= test_room * 1.1:
+                test_indices.extend(cluster)
+            elif cluster_size <= val_room * 1.1:
+                validation_indices.extend(cluster)
+            else:
+                # Cluster too large for either, goes to train
+                train_indices.extend(cluster)
+        elif len(validation_indices) < target_validation:
+            if cluster_size <= (target_validation - len(validation_indices)) * 1.1:
+                validation_indices.extend(cluster)
+            else:
+                train_indices.extend(cluster)
+        elif len(test_indices) < target_test:
+            if cluster_size <= (target_test - len(test_indices)) * 1.1:
+                test_indices.extend(cluster)
+            else:
+                train_indices.extend(cluster)
         else:
-            # Handle overflow cases...
+            # Both sets are full, rest goes to train
             train_indices.extend(cluster)
     
     train_set = [dataset[i] for i in train_indices]
