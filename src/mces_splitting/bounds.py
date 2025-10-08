@@ -228,11 +228,8 @@ def mces_lower_bound_symmetric(smiles_list:Sequence[str]) -> NDArray:
     numpy.ndarray
         Symmetric distance matrix where result[i,j] is the distance between molecules i and j
     """
-    symmetric_distance_matrix = calculate_symmetric_distance_matrix(smiles_list)
-    # we get a flattened list and now format it as a square numpy array
-    # symmetric_distance_matrix is expected to be a flat list or 1D numpy array of length n*n
-    n = int(np.sqrt(len(symmetric_distance_matrix)))
-    return np.array(symmetric_distance_matrix).reshape((n, n))
+    # Returns NumPy array directly - zero copy
+    return calculate_symmetric_distance_matrix(smiles_list)
 
 def mces_lower_bound(smiles_list1: Sequence[str], smiles_list2: Sequence[str]) -> NDArray:
     """
@@ -249,7 +246,6 @@ def mces_lower_bound(smiles_list1: Sequence[str], smiles_list2: Sequence[str]) -
     Returns
     -------
     numpy.ndarray
-        Symmetric distance matrix where result[i,j] is the distance between molecules i and j
+        Distance matrix where result[i,j] is the distance between molecules i and j
     """
-    distance_matrix = calculate_distance_matrix(smiles_list1, smiles_list2)
-    return distance_matrix
+    return calculate_distance_matrix(smiles_list1, smiles_list2)

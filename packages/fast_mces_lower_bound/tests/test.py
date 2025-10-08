@@ -1,5 +1,6 @@
 import fast_mces_lower_bound
 import numpy as np
+
 # Example SMILES list
 smiles_list = [
     "CCO",      # ethanol
@@ -10,28 +11,34 @@ smiles_list = [
     "C1CCCCC1", # cyclohexane
     "c1ccccc1", # benzene
     "c1ccc2cc3ccccc3cc2c1", # anthracene
-    # antracene, but with the 2 middle carbon alipahtic
+    # antracene, but with the 2 middle carbon aliphatic
     "c1ccc2cc3cCCcc3cc2c1", # anthracene with two middle carbons aliphatic
-
-
 ]
 
 # Run symmetric distance matrix
 sym_matrix = fast_mces_lower_bound.calculate_symmetric_distance_matrix(smiles_list)
 print("Symmetric distance matrix:", sym_matrix)
-# print the type of what we got, and assert that it's a flattened list. print also the inner type
+
+# Check that it's a numpy array (zero-copy from C++)
 print("Type of sym_matrix:", type(sym_matrix))
-if len(sym_matrix) > 0:
-    print("Type of elements in sym_matrix:", type(sym_matrix[0]))
-assert isinstance(sym_matrix, list), "sym_matrix is not a list"
-assert all(isinstance(x, (int, float, np.integer, np.floating)) for x in sym_matrix), "sym_matrix contains non-numeric elements"
-# make sure all the values
+print("Shape of sym_matrix:", sym_matrix.shape)
+print("Dtype of sym_matrix:", sym_matrix.dtype)
 
+assert isinstance(sym_matrix, np.ndarray), "sym_matrix is not a numpy array"
+assert sym_matrix.shape == (len(smiles_list), len(smiles_list)), "sym_matrix has incorrect shape"
 
-# now format it as a square numpy array
-sym_matrix = np.array(sym_matrix, dtype=float).reshape((len(smiles_list), len(smiles_list)))
 print("Formatted symmetric distance matrix: \n", sym_matrix)
-# make sure all values are >= 0
+
+# Make sure all values are >= 0
 assert np.all(sym_matrix >= 0), "Negative value found in symmetric distance matrix"
-# print the maximal value
+
+# Print the maximal value
 print("Max value in symmetric distance matrix:", np.max(sym_matrix))
+
+# Check symmetry
+assert np.allclose(sym_matrix, sym_matrix.T), "Matrix is not symmetric"
+
+# Check diagonal is zero
+assert np.allclose(np.diag(sym_matrix), 0), "Diagonal is not zero"
+
+print("\nAll tests passed!")
