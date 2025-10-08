@@ -16,7 +16,23 @@ endif()
 
 find_package(Boost REQUIRED COMPONENTS system serialization iostreams)
 # find_package(Eigen3 REQUIRED)
+
+# Ensure CMake finds Python from the environment, not the system
+# These must be set BEFORE find_package(Python)
+set(Python_FIND_STRATEGY LOCATION CACHE STRING "Python find strategy")
+set(Python_FIND_VIRTUALENV FIRST CACHE STRING "Python find virtualenv priority")
+set(Python_FIND_REGISTRY NEVER CACHE STRING "Python find registry")
+set(Python_FIND_FRAMEWORK NEVER CACHE STRING "Python find framework")
+
 find_package(Python 3.8 COMPONENTS Interpreter Development.Module REQUIRED)
+
+# Print the Python version being used
+message(STATUS "Using Python: ${Python_EXECUTABLE}")
+message(STATUS "Python version: ${Python_VERSION}")
+message(STATUS "Python include dir: ${Python_INCLUDE_DIRS}")
+message(STATUS "Python library dir: ${Python_LIBRARY_DIRS}")
+message(STATUS "Python site-packages will be: ${Python_SITEARCH}")
+
 find_package(OpenMP REQUIRED)
 
 execute_process(
@@ -28,6 +44,7 @@ execute_process(
     OUTPUT_VARIABLE PYTHON_SITE_PACKAGES
     OUTPUT_STRIP_TRAILING_WHITESPACE
 )
+message(STATUS "Python site-packages from sysconfig: ${PYTHON_SITE_PACKAGES}")
 
 find_package(nanobind CONFIG REQUIRED)
 # now print whether nanobind was found, print anyway

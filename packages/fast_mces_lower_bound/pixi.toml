@@ -6,17 +6,19 @@ preview = ["pixi-build"]
 
 [dependencies]
 fast_mces_lower_bound = { path = "."}
-python = "*"
+python = "3.12.*"
 numpy = "*"
 polars = "*"
 [tasks]
 start = { cmd = "python -c 'import fast_mces_lower_bound'"}
 test = "python tests/test.py"
 benchmark = "python tests/benchmark.py"
+publish-prefix = {cmd="rattler-build upload prefix --channel nir-cohen"}
+publish-anaconda = {cmd="rattler-build upload anaconda --owner Nir_Cohen --channel main"}
 
 [package]
 name = "fast_mces_lower_bound"
-version = "1.0.0"
+version = "1.0.2"
 authors = ["Nir Cohen"]
 
 [package.build]
@@ -27,20 +29,27 @@ extra-args = [
   "-DCMAKE_BUILD_TYPE=Release",
   "-DRDKIT_INCLUDE_DIR=${PREFIX}/include/rdkit",
   "-DRDKIT_LIB_DIR=${PREFIX}/lib",
+  "-DPython_ROOT_DIR=${PREFIX}",
+  "-DPython_FIND_STRATEGY=LOCATION",
+  "-DPython_FIND_REGISTRY=NEVER",
+  "-DPython_FIND_FRAMEWORK=NEVER",
+  "-DPython_EXECUTABLE=${PREFIX}/bin/python",
   # "-DFAST_MCES_PROFILE=1"
 ]
 
+[workspace.build-variants]
+python = ["3.12.*", "3.13.*"]
 
 [package.host-dependencies]
 nanobind = ">=2.4.0"
 librdkit-dev = ">=2024.0.0"
 boost-cpp = "*"
-python = ">=3.8"
+python = "*"
 [package.build-dependencies]#these are necessery for the nanobind stuff to work
 nanobind = ">=2.4.0"
 librdkit-dev = ">=2024.0.0"
 boost-cpp = "*"
-python = ">=3.8"
+python = "*"
 
 [package.run-dependencies]
 # The runtime dependencies of the package
