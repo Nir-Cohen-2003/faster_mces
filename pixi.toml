@@ -1,38 +1,41 @@
 [workspace]
 authors = ["Nir"]
-channels = ["https://prefix.dev/conda-forge"]
+channels = ["https://prefix.dev/conda-forge","https://prefix.dev/nir-cohen"]
 name = "mces_splitting"
 platforms = ["linux-64"]
-version = "0.1.0"
+version = "0.2.0"
 preview = ["pixi-build"]
 
 [tasks]
-test = "python src/mces_splitting/test.py"
 splitting_test = "python -m src.mces_splitting.dataset_splitting"
 bounds_validity_test = "python -m src.mces_splitting.bounds_test"
+publish-prefix = {cmd="rattler-build upload prefix --channel nir-cohen"}
+publish-anaconda = {cmd="rattler-build upload anaconda --owner Nir_Cohen --channel main"}
 
 [dependencies]
 mces_splitting = { path = "." }
-python = ">=3.12.0"
+python = "3.12.*"
+hrms_utils = ">=0.6.2"
 
 [pypi-dependencies]
-hrms_utils = {version = "==0.2.1.post2" ,index = "https://test.pypi.org/simple"}
 ipykernel = "*"
 
 [package]
 name = "mces_splitting"
-version = "0.1.0"
+version = "0.2.0"
+authors = ["Nir"]
+description = "MCES-based dataset splitting"
 
 [package.build] 
-backend = { name = "pixi-build-python", version = "==0.3.2" }
+backend = { name = "pixi-build-python", version = ">=0.3.2" }
 
 [package.host-dependencies] 
-python = ">=3.12.0"
+python = "*"
 pip = "*"
 hatchling = "*"
-# numpy = "*"
+
 [package.run-dependencies] 
-fast_mces_lower_bound = { path = "packages/fast_mces_lower_bound" }
+fast_mces_lower_bound = ">=1.1.0"
 rdkit = ">=2024.0.0"
 polars = ">=1.32.0,<2"
 numpy = ">=2.0.0,<2.3.0"

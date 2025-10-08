@@ -1,16 +1,15 @@
-
 [project]
 name = "mces_splitting"
-version = "0.1.0"
+version = "0.2.0"
 
-requires-python = ">=3.12"
-dependencies = [
-    "rdkit>=2024.0.0",
-    "polars>=1.32.0,<2",
-    "numpy>=2.0.0,<2.3.0",
-    "scipy",
-    "networkx"
-]
+# requires-python = ">=3.12"
+# dependencies = [
+#     "rdkit>=2024.0.0",
+#     "polars>=1.32.0,<2",
+#     "numpy>=2.0.0,<2.3.0",
+#     "scipy",
+#     "networkx"
+# ]
 
 
 [build-system]

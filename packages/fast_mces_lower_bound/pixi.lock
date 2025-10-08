@@ -252,7 +252,7 @@ packages:
   timestamp: 1749047748072
 - conda: .
   name: fast_mces_lower_bound
-  version: 1.0.2
+  version: 1.1.0
   build: py312h2078e5b_0
   subdir: linux-64
   depends:
@@ -261,11 +261,11 @@ packages:
   - libgcc >=15
   - python_abi 3.12.* *_cp312
   input:
-    hash: ba171b8525412083deb424737cf1ce679f8ce7b9eafb8fa923c004365ed36c2d
+    hash: 0943ffad768f0f388b50d2f9ed638438567cd1a6a36119cf9b7c212f9d8f3f5f
     globs: []
 - conda: .
   name: fast_mces_lower_bound
-  version: 1.0.2
+  version: 1.1.0
   build: py312h24e4973_0
   subdir: win-64
   depends:
@@ -275,7 +275,7 @@ packages:
   - ucrt >=10.0.20348.0
   - python_abi 3.12.* *_cp312
   input:
-    hash: ba171b8525412083deb424737cf1ce679f8ce7b9eafb8fa923c004365ed36c2d
+    hash: 0943ffad768f0f388b50d2f9ed638438567cd1a6a36119cf9b7c212f9d8f3f5f
     globs: []
 - conda: https://prefix.dev/conda-forge/noarch/font-ttf-dejavu-sans-mono-2.37-hab24e00_0.tar.bz2
   sha256: 58d7f40d2940dd0a8aa28651239adbf5613254df0f75789919c4e6762054403b

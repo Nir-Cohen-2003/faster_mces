@@ -13,6 +13,10 @@ smiles_list = [
     "c1ccc2cc3ccccc3cc2c1", # anthracene
     # antracene, but with the 2 middle carbon aliphatic
     "c1ccc2cc3cCCcc3cc2c1", # anthracene with two middle carbons aliphatic
+    "Nc1cc(C)ccc1",  # m-methylaniline (meta-methyl aniline)
+    "Nc1ccc(C)cc1",  # p-methylaniline (para-methyl aniline)
+    "CN(C)C(Cc1ccccc1)",  # methamphetamine (N-methylamphetamine)
+    "CC(Cc1ccc(C)cc1)N",  # 4-methylamphetamine (methyl on the benzene ring, para)
 ]
 
 # Run symmetric distance matrix

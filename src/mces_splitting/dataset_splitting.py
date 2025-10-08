@@ -9,7 +9,7 @@ import random
 # from pickle import dump, load
 # from .par import _calculate_bounds_batch
 from .bounds import mces_lower_bound_symmetric
-from .mces import calculate_mces_distances, exact_mces_for_list_of_pairs  # Assuming this function exists
+from .mces import  exact_mces_for_list_of_pairs 
 from multiprocessing import cpu_count
 
 ### logic for dataset splitting:
@@ -481,18 +481,20 @@ def split_dataset_brute_force_exact(
 
 if __name__ == "__main__":
     from time import perf_counter
-    from hrms_utils.rdkit.mol import inchi_to_smiles
+    from hrms_utils.rdkit import sanitize_smiles_polars
+    # Load DSSTox CSV next to the src directory (one level up from this file)
+    csv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "dsstox_smiles_medium.csv"))
+    if not os.path.exists(csv_path):
+        raise FileNotFoundError(f"CSV file not found at {csv_path}")
 
-    nist_smiles: List[str] = pl.scan_parquet('/home/analytit_admin/dev/MS_encoder/data/NIST_prepared_labeled.parquet').select('CanonicalSMILES').unique(maintain_order=True).with_columns(
-            pl.col("CanonicalSMILES").map_batches(
-                function=sanitize_smiles_polars,
-                return_dtype=pl.String,
-            )
-        ).filter(
-            pl.col("CanonicalSMILES").is_not_null(),
-            pl.col("CanonicalSMILES").ne("")
-        ).head(2000).collect().to_series().to_list()
-    if any(smile=="=" for smile in nist_smiles):
+    # Read the single-column CSV ("MS_READY_SMILES"), sanitize and filter empty entries
+    nist_smiles: List[str] = pl.scan_csv(csv_path).select("MS_READY_SMILES").unique(maintain_order=True).with_columns(
+        pl.col("MS_READY_SMILES").map_batches(function=sanitize_smiles_polars, return_dtype=pl.String)
+    ).filter(
+        pl.col("MS_READY_SMILES").is_not_null(),
+        pl.col("MS_READY_SMILES").ne("")
+    ).collect().to_series().to_list()
+    if any(smile == "=" for smile in nist_smiles):
         raise ValueError("Invalid SMILES found in dataset. Please check the input data.")
     # Create data directory if it doesn't exist
     os.makedirs(os.path.join(os.path.dirname(__file__), "__pycache__"), exist_ok=True)

@@ -26,6 +26,10 @@ def bounds_validity_test(data_file_path: str, skip_mces: bool = False):
     # antracene, but with the 2 middle carbon alipahtic
     "c1ccc2cc3cCCcc3cc2c1", # anthracene with two middle carbons aliphatic
     "CC(NC)CC1=CC=C(OCO2)C2=C1", # mdma
+    "Nc1cc(C)ccc1",  # m-methylaniline (meta-methyl aniline)
+    "Nc1ccc(C)cc1",  # p-methylaniline (para-methyl aniline)
+    "CN(C)C(Cc1ccccc1)",  # methamphetamine (N-methylamphetamine)
+    "CC(Cc1ccc(C)cc1)N",  # 4-methylamphetamine (methyl on the benzene ring, para)
     "CCCCCc1cc(c2c(c1)OC([C@H]3[C@H]2C=C(CC3)C)(C)C)O", #THC
     r"Oc1c(c(O)cc(c1)CCCCC)[C@@H]2\C=C(/CC[C@H]2\C(=C)C)C", #CBD
     "O=C4[C@@H]5Oc1c2c(ccc1OC)C[C@H]3N(CC[C@]25[C@@]3(O)CC4)C", # oxycodone
@@ -40,6 +44,25 @@ def bounds_validity_test(data_file_path: str, skip_mces: bool = False):
     time2_cpp = perf_counter() - start_time
     cpp_available = True
     logs.append("C++ mces lower-bound implementation used for comparison")
+
+    # Added: print the C++ filter2 / mces lower-bound matrix (rows = G1, cols = G2)
+    cpp_arr = np.array(cpp_matrix)
+    # Ensure we have a 2D matrix for printing. The C++ function may return a flat list.
+    n = len(graphs)
+    if cpp_arr.ndim == 1:
+        if cpp_arr.size == n * n:
+            cpp_arr = cpp_arr.reshape((n, n))
+        else:
+            s = int(np.sqrt(cpp_arr.size))
+            if s * s == cpp_arr.size:
+                cpp_arr = cpp_arr.reshape((s, s))
+            else:
+                # fallback: print as a single row
+                cpp_arr = cpp_arr.reshape((1, cpp_arr.size))
+
+    logs.append("C++ mces_lower_bound matrix (rows = G1, cols = G2):")
+    for row in cpp_arr:
+        logs.append(" ".join(f"{float(v):.6f}" for v in row))
 
     # time filter1
     start_time = perf_counter()

@@ -18,7 +18,7 @@ publish-anaconda = {cmd="rattler-build upload anaconda --owner Nir_Cohen --chann
 
 [package]
 name = "fast_mces_lower_bound"
-version = "1.0.2"
+version = "1.1.0"
 authors = ["Nir Cohen"]
 
 [package.build]
