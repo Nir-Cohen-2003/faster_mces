@@ -12,7 +12,9 @@ authors = ["Nir"]
 description = "MCES-based dataset splitting"
 
 [tasks]
-splitting_test = "python tests/splitting_test.py"
+splitting_test = "python tests/splitting_test.py --skip-exact 2000"
+splitting_test_exact = "python tests/splitting_test.py 2000"
+splitting_test_full = "python tests/splitting_test.py"
 bounds_validity_test = "python tests/bounds_test.py"
 publish-prefix = {cmd="rattler-build upload prefix --channel nir-cohen"}
 publish-anaconda = {cmd="rattler-build upload anaconda --owner Nir_Cohen --channel main"}

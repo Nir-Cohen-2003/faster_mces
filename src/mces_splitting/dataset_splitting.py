@@ -91,7 +91,7 @@ def split_dataset_adaptive_threshold(
     bounds_matrix = _load_and_validate_mces_matrix(dataset, use_saved_mces_matrix_path)
     
     if bounds_matrix is None:
-        print(f"Calculating lower bounds matrix for {n} molecules using C++ implementation...")
+        print(f"Calculating lower bounds matrix for {n} molecules")
         bounds_matrix = mces_lower_bound_symmetric(dataset.copy())
         if mces_matrix_save_path is not None:
             np.save(mces_matrix_save_path, bounds_matrix)
