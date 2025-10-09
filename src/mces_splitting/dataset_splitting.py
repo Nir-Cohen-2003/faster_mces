@@ -24,6 +24,45 @@ from multiprocessing import cpu_count
 # 2. then we try to split the data set usign the given fractions and distinction threshold.
 # if this fails, we lower the distinction threshold and try again, until we reach a point where we can split the dataset.
 
+def _load_and_validate_mces_matrix(
+    dataset: list[str],
+    use_saved_mces_matrix_path: str | None
+) -> np.ndarray | None:
+    """
+    Load and validate a saved MCES matrix. Returns None if invalid or not found.
+    """
+    if use_saved_mces_matrix_path is None or not os.path.exists(use_saved_mces_matrix_path):
+        return None
+    
+    try:
+        saved_matrix = np.load(use_saved_mces_matrix_path)
+        n = len(dataset)
+        
+        # Check dimensions
+        if saved_matrix.shape != (n, n):
+            print(f"Warning: Saved matrix has shape {saved_matrix.shape}, but dataset has {n} molecules. Ignoring saved matrix.")
+            return None
+        
+        # Validate by calculating bounds for first min(20, n) entries
+        validation_size = min(20, n)
+        validation_dataset = dataset[:validation_size]
+        
+        print(f"Validating saved matrix by recalculating first {validation_size} entries...")
+        validation_matrix = mces_lower_bound_symmetric(validation_dataset)
+        
+        # Compare validation subset
+        saved_subset = saved_matrix[:validation_size, :validation_size]
+        if not np.allclose(saved_subset, validation_matrix, rtol=0, atol=0):
+            print("Warning: Saved matrix validation failed - values don't match recalculated bounds. Ignoring saved matrix.")
+            return None
+        
+        print("Saved matrix validation successful!")
+        return saved_matrix
+        
+    except Exception as e:
+        print(f"Warning: Error loading saved matrix: {e}. Ignoring saved matrix.")
+        return None
+
 def split_dataset_adaptive_threshold(
     dataset: list[str],
     validation_fraction=0.1,
@@ -32,20 +71,33 @@ def split_dataset_adaptive_threshold(
     min_distinction_threshold: int = 2,
     threshold_step: int = -1,
     min_ratio: float = 0.7,
-    mces_matrix_save_path: str | None = None
+    mces_matrix_save_path: str | None = None,
+    use_saved_mces_matrix_path: str | None = None,
+    random_seed: int = 0
 ) -> Tuple[list[str], list[str], list[str], int]:
     """
     Split dataset using precomputed lower bounds, adaptively lowering the threshold if needed.
     Only the lower bounds are used (no exact MCES).
-    """
     
+    Args:
+        random_seed: Seed for random shuffling of clusters. Default is 0.
+        use_saved_mces_matrix_path: Path to load saved MCES matrix from. Will be validated before use.
+    """
+    random.seed(random_seed)
+    dataset = sorted(dataset)
     n = len(dataset)
-    print(f"Calculating lower bounds matrix for {n} molecules using C++ implementation...")
-
-    # Use C++ implementation for batch processing - much faster
-    bounds_matrix = mces_lower_bound_symmetric(dataset.copy())
-    if mces_matrix_save_path is not None:
-        np.save(mces_matrix_save_path, bounds_matrix)
+    
+    # Try to load saved matrix
+    bounds_matrix = _load_and_validate_mces_matrix(dataset, use_saved_mces_matrix_path)
+    
+    if bounds_matrix is None:
+        print(f"Calculating lower bounds matrix for {n} molecules using C++ implementation...")
+        bounds_matrix = mces_lower_bound_symmetric(dataset.copy())
+        if mces_matrix_save_path is not None:
+            np.save(mces_matrix_save_path, bounds_matrix)
+    else:
+        print(f"Using validated saved MCES matrix from {use_saved_mces_matrix_path}")
+    
     if n < 20:
         # then we print the matrix to see if it looks correct
         print("Lower bounds matrix:")
@@ -119,12 +171,14 @@ def find_critical_pairs_for_threshold_optimization(
     validation_fraction: float = 0.1,
     test_fraction: float = 0.1,
     min_ratio: float = 0.7,
-    max_exact_calculations: int = 1000
+    max_exact_calculations: int = 1000,
+    random_seed: int = 0
 ) -> list[tuple[int, int]]:
     """
     Find pairs where calculating exact MCES might enable using a higher threshold.
     Returns pairs sorted by potential impact.
     """
+    random.seed(random_seed)
     n = len(dataset)
     validation_size = int(n * validation_fraction)
     test_size = int(n * test_fraction)
@@ -187,18 +241,33 @@ def split_dataset_with_selective_exact_calculation(
     threshold_step: int = -1,
     min_ratio: float = 0.7,
     max_exact_calculations: int = 1000,
-    mces_matrix_save_path: str | None = None
+    mces_matrix_save_path: str | None = None,
+    use_saved_mces_matrix_path: str | None = None,
+    random_seed: int = 0
 ) -> Tuple[list[str], list[str], list[str], int]:
     """
     Split dataset with strategic exact MCES calculations to enable higher thresholds.
     Uses entire budget to achieve highest possible threshold.
+    
+    Args:
+        random_seed: Seed for random shuffling of clusters. Default is 0.
+        use_saved_mces_matrix_path: Path to load saved MCES matrix from. Will be validated before use.
     """
+    random.seed(random_seed)
     
     n = len(dataset)
-    print(f"Calculating lower bounds matrix for {n} molecules...")
-    bounds_matrix = mces_lower_bound_symmetric(dataset)
-    if mces_matrix_save_path is not None:
-        np.save(mces_matrix_save_path, bounds_matrix)
+    
+    # Try to load saved matrix
+    bounds_matrix = _load_and_validate_mces_matrix(dataset, use_saved_mces_matrix_path)
+    
+    if bounds_matrix is None:
+        print(f"Calculating lower bounds matrix for {n} molecules...")
+        bounds_matrix = mces_lower_bound_symmetric(dataset)
+        if mces_matrix_save_path is not None:
+            np.save(mces_matrix_save_path, bounds_matrix)
+    else:
+        print(f"Using validated saved MCES matrix from {use_saved_mces_matrix_path}")
+    
     thresholds = list(range(initial_distinction_threshold, min_distinction_threshold - 1, threshold_step))
     remaining_calculations = max_exact_calculations
     
@@ -208,7 +277,7 @@ def split_dataset_with_selective_exact_calculation(
         
         # First check if lower bounds alone work
         train_set, validation_set, test_set = try_split_with_threshold(
-            dataset, bounds_matrix, target_threshold, validation_fraction, test_fraction, min_ratio
+            dataset, bounds_matrix, target_threshold, validation_fraction, test_fraction, min_ratio, random_seed
         )
         
         if train_set is not None:
@@ -229,7 +298,7 @@ def split_dataset_with_selective_exact_calculation(
             # Find critical pairs and calculate exact distances
             critical_pairs = find_critical_pairs_for_threshold_optimization(
                 dataset, bounds_matrix, target_threshold, validation_fraction, 
-                test_fraction, min_ratio, threshold_budget
+                test_fraction, min_ratio, threshold_budget, random_seed
             )
             
             if critical_pairs and threshold_budget > 0:
@@ -263,7 +332,7 @@ def split_dataset_with_selective_exact_calculation(
                 
                 # Check if exact calculations enabled this threshold
                 train_set, validation_set, test_set = try_split_with_threshold(
-                    dataset, enhanced_matrix, target_threshold, validation_fraction, test_fraction, min_ratio
+                    dataset, enhanced_matrix, target_threshold, validation_fraction, test_fraction, min_ratio, random_seed
                 )
                 
                 if train_set is not None:
@@ -285,11 +354,13 @@ def try_split_with_threshold(
     threshold: int,
     validation_fraction: float,
     test_fraction: float,
-    min_ratio: float
+    min_ratio: float,
+    random_seed: int = 0
 ) -> Tuple[list[str], list[str], list[str]] | Tuple[None, None, None]:
     """
     Attempt to split dataset with given threshold. Returns None if unsuccessful.
     """
+    random.seed(random_seed)
     n = len(dataset)
     not_distinct = (distance_matrix < threshold)
     rows, cols = np.where(not_distinct)
@@ -377,20 +448,32 @@ def split_dataset_brute_force_exact(
     threshold_step: int = -1,
     min_ratio: float = 0.7,
     max_exact_calculations: int | None = None,
-    mces_matrix_save_path: str | None = None
+    mces_matrix_save_path: str | None = None,
+    use_saved_mces_matrix_path: str | None = None,
+    random_seed: int = 0
 ) -> Tuple[list[str], list[str], list[str], int]:
     """
     Brute force version: calculate exact MCES for all pairs below threshold.
     If max_exact_calculations is set, prioritize pairs with highest bounds (closest to threshold).
+    
+    Args:
+        random_seed: Seed for random shuffling of clusters. Default is 0.
+        use_saved_mces_matrix_path: Path to load saved MCES matrix from. Will be validated before use.
     """
+    random.seed(random_seed)
     
     n = len(dataset)
-    print(f"Calculating lower bounds matrix for {n} molecules using C++ implementation...")
-
-    # Use C++ implementation for batch processing
-    bounds_matrix = mces_lower_bound_symmetric(dataset.copy())
-    if mces_matrix_save_path is not None:
-        np.save(mces_matrix_save_path, bounds_matrix)
+    
+    # Try to load saved matrix
+    bounds_matrix = _load_and_validate_mces_matrix(dataset, use_saved_mces_matrix_path)
+    
+    if bounds_matrix is None:
+        print(f"Calculating lower bounds matrix for {n} molecules using C++ implementation...")
+        bounds_matrix = mces_lower_bound_symmetric(dataset.copy())
+        if mces_matrix_save_path is not None:
+            np.save(mces_matrix_save_path, bounds_matrix)
+    else:
+        print(f"Using validated saved MCES matrix from {use_saved_mces_matrix_path}")
     
     if n < 20:
         print("Lower bounds matrix:")
@@ -406,7 +489,7 @@ def split_dataset_brute_force_exact(
         
         # First try with just lower bounds
         train_set, validation_set, test_set = try_split_with_threshold(
-            dataset, bounds_matrix, threshold, validation_fraction, test_fraction, min_ratio
+            dataset, bounds_matrix, threshold, validation_fraction, test_fraction, min_ratio, random_seed
         )
         
         if train_set is not None:
@@ -488,7 +571,7 @@ def split_dataset_brute_force_exact(
         
         # Try splitting with enhanced matrix
         train_set, validation_set, test_set = try_split_with_threshold(
-            dataset, enhanced_matrix, threshold, validation_fraction, test_fraction, min_ratio
+            dataset, enhanced_matrix, threshold, validation_fraction, test_fraction, min_ratio, random_seed
         )
         
         if train_set is not None:
@@ -503,116 +586,3 @@ def split_dataset_brute_force_exact(
             bounds_matrix = enhanced_matrix
     
     raise RuntimeError("Could not split dataset with given parameters and thresholds, even with brute force exact calculations.")
-
-
-if __name__ == "__main__":
-    from time import perf_counter
-    from hrms_utils.rdkit import sanitize_smiles_polars
-    # Load DSSTox CSV next to the src directory (one level up from this file)
-    csv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "dsstox_smiles_medium.csv"))
-    if not os.path.exists(csv_path):
-        raise FileNotFoundError(f"CSV file not found at {csv_path}")
-
-    # Read the single-column CSV ("MS_READY_SMILES"), sanitize and filter empty entries
-    nist_smiles: List[str] = pl.scan_csv(csv_path).select("MS_READY_SMILES").unique(maintain_order=True).with_columns(
-        pl.col("MS_READY_SMILES").map_batches(function=sanitize_smiles_polars, return_dtype=pl.String)
-    ).filter(
-        pl.col("MS_READY_SMILES").is_not_null(),
-        pl.col("MS_READY_SMILES").ne("")
-    ).collect().to_series().to_list()
-    if any(smile == "=" for smile in nist_smiles):
-        raise ValueError("Invalid SMILES found in dataset. Please check the input data.")
-    # Create data directory if it doesn't exist
-    os.makedirs(os.path.join(os.path.dirname(__file__), "__pycache__"), exist_ok=True)
-
-    start = perf_counter()
-    train_set, validation_set, test_set, threshold_adaptive = split_dataset_adaptive_threshold(
-        nist_smiles.copy(),
-        validation_fraction=0.1,
-        test_fraction=0.1,
-        initial_distinction_threshold=10,
-        min_distinction_threshold=0,
-        threshold_step=-1,
-        # mces_matrix_save_path=os.path.join(os.path.dirname(__file__), "__pycache__", "mces_matrix.npy")
-        
-    )  # type: Tuple[List[str], List[str], List[str], int]
-    end = perf_counter()
-    adaptive_time = end - start
-    # now write the sets to files named train_set.parquet, validation_set.parquet, test_set.parquet
-    # pl.DataFrame({"CanonicalSMILES": train_set}).write_parquet(os.path.join(os.path.dirname(__file__), "__pycache__", "train_set.parquet"))
-    # pl.DataFrame({"CanonicalSMILES": validation_set}).write_parquet(os.path.join(os.path.dirname(__file__), "__pycache__", "validation_set.parquet"))
-    # pl.DataFrame({"CanonicalSMILES": test_set}).write_parquet(os.path.join(os.path.dirname(__file__), "__pycache__", "test_set.parquet"))
-    print(f"Training set size: {len(train_set)}")
-    print(f"Validation set size: {len(validation_set)}")
-    print(f"Test set size: {len(test_set)}")
-    print(f"Total size: {len(nist_smiles)}")
-    print(f"Time taken: {adaptive_time:.2f} seconds")
-
-    # # now use the selective exact calculation method
-    # start = perf_counter()
-    # train_set, validation_set, test_set, threshold_selective_exact = split_dataset_with_selective_exact_calculation(
-    #     nist_smiles.copy(),
-    #     validation_fraction=0.1,
-    #     test_fraction=0.1,
-    #     initial_distinction_threshold=10,
-    #     min_distinction_threshold=0,
-    #     threshold_step=-1,
-    #     max_exact_calculations=10_000,
-    # )  # type: Tuple[List[str], List[str], List[str], int]
-    # end = perf_counter()
-    # selective_time = end - start
-
-    # # # now write them to similar files, but add _with_exact to the names
-    # # pl.DataFrame({"CanonicalSMILES": train_set}).write_parquet(os.path.join(os.path.dirname(__file__), "__pycache__", "train_set_with_exact.parquet"))
-    # # pl.DataFrame({"CanonicalSMILES": validation_set}).write_parquet(os.path.join(os.path.dirname(__file__), "__pycache__", "validation_set_with_exact.parquet"))
-    # # pl.DataFrame({"CanonicalSMILES": test_set}).write_parquet(os.path.join(os.path.dirname(__file__), "__pycache__", "test_set_with_exact.parquet"))
-
-    # print(f"Training set size: {len(train_set)}")
-    # print(f"Validation set size: {len(validation_set)}")
-    # print(f"Test set size: {len(test_set)}")
-    # print(f"Total size: {len(nist_smiles)}")
-    # print(f"Time taken (selective): {selective_time:.2f} seconds")
-    
-    # print(f"Adaptive threshold: {threshold}")
-    # print(f"Selective exact calculation threshold: {threshold}")
-    # print(f"Adaptive time: {adaptive_time:.2f} seconds")
-    # print(f"Selective exact calculation time: {selective_time:.2f} seconds")
-    # print(f"Speedup of forgoing exact calculations: {selective_time / adaptive_time:.2f}x")
-
-
-    # now use the brute force exact calculation method
-    start = perf_counter()
-    train_set, validation_set, test_set, threshold_brute_force = split_dataset_brute_force_exact(
-        nist_smiles.copy(),
-        validation_fraction=0.1,
-        test_fraction=0.1,
-        initial_distinction_threshold=10,
-        min_distinction_threshold=0,
-        threshold_step=-1,
-        max_exact_calculations=30_000,
-    )  # type: Tuple[List[str], List[str], List[str], int]
-    end = perf_counter()
-    brute_force_time = end - start
-
-    # # now write them to similar files, but add _brute_force to the names
-    # pl.DataFrame({"CanonicalSMILES": train_set}).write_parquet(os.path.join(os.path.dirname(__file__), "__pycache__", "train_set_brute_force.parquet"))
-    # pl.DataFrame({"CanonicalSMILES": validation_set}).write_parquet(os.path.join(os.path.dirname(__file__), "__pycache__", "validation_set_brute_force.parquet"))
-    # pl.DataFrame({"CanonicalSMILES": test_set}).write_parquet(os.path.join(os.path.dirname(__file__), "__pycache__", "test_set_brute_force.parquet"))
-
-    print(f"\n=== BRUTE FORCE EXACT RESULTS ===")
-    print(f"Training set size: {len(train_set)}")
-    print(f"Validation set size: {len(validation_set)}")
-    print(f"Test set size: {len(test_set)}")
-    print(f"Total size: {len(nist_smiles)}")
-    print(f"Time taken (brute force): {brute_force_time:.2f} seconds")
-    
-    print(f"\n=== COMPARISON ===")
-    print(f"Adaptive threshold: {threshold_adaptive}")
-    # print(f"Selective exact calculation threshold: {threshold_selective_exact}")
-    print(f"Brute force exact calculation threshold: {threshold_brute_force}")
-    print(f"Adaptive time: {adaptive_time:.2f} seconds")
-    # print(f"Selective exact calculation time: {selective_time:.2f} seconds")
-    print(f"Brute force exact calculation time: {brute_force_time:.2f} seconds")
-    # print(f"Selective vs Adaptive speedup: {selective_time / adaptive_time:.2f}x")
-    print(f"Brute force vs Adaptive is lower by: {brute_force_time / adaptive_time:.2f}x")
-    # print(f"Selective vs Brute force speedup: {selective_time / brute_force_time:.2f}x")

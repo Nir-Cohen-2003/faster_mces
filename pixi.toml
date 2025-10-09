@@ -12,8 +12,8 @@ authors = ["Nir"]
 description = "MCES-based dataset splitting"
 
 [tasks]
-splitting_test = "python -m src.mces_splitting.dataset_splitting"
-bounds_validity_test = "python -m src.mces_splitting.bounds_test"
+splitting_test = "python tests/splitting_test.py"
+bounds_validity_test = "python tests/bounds_test.py"
 publish-prefix = {cmd="rattler-build upload prefix --channel nir-cohen"}
 publish-anaconda = {cmd="rattler-build upload anaconda --owner Nir_Cohen --channel main"}
 

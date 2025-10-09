@@ -6,8 +6,8 @@ import numpy as np
 import polars as pl
 
 # relative imports from the package
-from .bounds import filter1, filter2_from_lib, mces_lower_bound_symmetric
-from .mces import construct_graph, MCES_ILP, suppress_output
+from mces_splitting.bounds import filter1, filter2_from_lib, mces_lower_bound_symmetric
+from mces_splitting.mces import construct_graph, MCES_ILP, suppress_output
 
 
 def bounds_validity_test(data_file_path: str, skip_mces: bool = False):
