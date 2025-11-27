@@ -12,3 +12,16 @@ to install into the default environemnt of the project:
 pixi install
 to run tests:
 pixi run splitting_test 
+
+Usage:
+from mces_splitting import split_dataset_lower_bound_only
+smiles_list = [CCO,CCN]
+train_set, validation_set, test_set, threshold = split_dataset_lower_bound_only(
+        smiles_list.copy(),
+        validation_fraction=0.1,
+        test_fraction=0.1,
+        initial_distinction_threshold=10,
+        min_distinction_threshold=0,
+        threshold_step=-1,
+        mces_matrix_save_path=test_matrix_path
+    )
