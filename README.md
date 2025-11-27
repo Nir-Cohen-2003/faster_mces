@@ -1,5 +1,5 @@
 Installation:
-Installign from prebuilt packages:
+Installing from prebuilt packages:
 if using conda/mamba/micromamba: (replace codna with respective tool)
 conda install -c https://prefix.dev/nir-cohen mces_splitting
 if using pixi (recommended in general):
