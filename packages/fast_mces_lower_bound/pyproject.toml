@@ -1,0 +1,32 @@
+[build-system]
+requires = ["scikit-build-core", "nanobind", "cmake", "ninja"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "fast_mces_lower_bound"
+version = "0.2.0"
+authors = [{name = "Nir"}]
+description = "Fast MCES utilities"
+dependencies = [
+    "rdkit",
+    "polars",
+    "pyarrow",
+    "pytest",
+    "numpy",
+    "pandas",
+    "tqdm",
+]
+
+[tool.scikit-build]
+wheel.py-api = "cp38"
+cmake.args = [
+    "-DPython_FIND_STRATEGY=LOCATION",
+    "-DPython_FIND_REGISTRY=NEVER",
+    "-DPython_FIND_FRAMEWORK=NEVER",
+]
+
+[tool.scikit-build.cmake.define]
+CMAKE_BUILD_TYPE = "Release"
+
+[tool.scikit-build.ninja]
+make-fallback = false
