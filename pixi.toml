@@ -7,7 +7,7 @@ preview = ["pixi-build"]
     
 [package]
 name = "mces_splitting"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Nir"]
 description = "MCES-based dataset splitting"
 

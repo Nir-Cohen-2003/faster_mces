@@ -2532,7 +2532,7 @@ packages:
   requires_python: '>=3.8'
 - conda: .
   name: mces_splitting
-  version: 0.3.0
+  version: 0.4.0
   build: pyh4616a5c_0
   subdir: noarch
   variants:
