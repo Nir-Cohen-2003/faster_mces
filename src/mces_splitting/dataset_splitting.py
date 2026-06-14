@@ -1,7 +1,7 @@
 import polars as pl
 import numpy as np
 # from .mces import are_very_distinct, suppress_output
-from typing import Tuple, List
+from typing import Tuple, List, Dict, Literal, Any
 import os
 from scipy.sparse.csgraph import connected_components
 import scipy.sparse as sp
@@ -11,6 +11,8 @@ import random
 from .bounds import mces_lower_bound_symmetric
 from .mces import  exact_mces_for_list_of_pairs 
 from multiprocessing import cpu_count
+import umap
+import hdbscan
 
 ### logic for dataset splitting:
 # we take a list of smiles, and the requested fractions for validation and test sets.
@@ -606,8 +608,11 @@ def split_dataset_umap(
     symmetric MCES lower-bound matrix as a precomputed distance matrix. The
     embedding is then clustered with HDBSCAN. Noise points are treated as
     singleton clusters so that the round-robin assignment still has enough
-    granularity. Clusters are distributed across train/validation/test so that
-    each split covers the structural diversity represented in the UMAP space.
+    granularity. If HDBSCAN collapses to too few clusters (common on small or
+    very homogeneous datasets), the embedding is re-partitioned with k-means so
+    that there are enough clusters to populate validation and test sets.
+    Clusters are distributed across train/validation/test so that each split
+    covers the structural diversity represented in the UMAP space.
 
     Parameters
     ----------
@@ -637,15 +642,6 @@ def split_dataset_umap(
     Tuple[list[str], list[str], list[str], np.ndarray, np.ndarray]
         (train_set, validation_set, test_set, bounds_matrix, umap_embedding)
     """
-    try:
-        import umap
-        import hdbscan
-    except ImportError as exc:  # pragma: no cover
-        raise ImportError(
-            "split_dataset_umap requires 'umap-learn' and 'hdbscan'. "
-            "Install them (e.g. 'pip install umap-learn hdbscan') and retry."
-        ) from exc
-
     n = len(dataset)
     if n < 2:
         raise ValueError("Dataset must contain at least 2 molecules for UMAP splitting.")
@@ -799,6 +795,97 @@ def split_dataset_umap(
         f"validation={len(validation_set)} (need {min_val}), "
         f"test={len(test_set)} (need {min_test})."
     )
+
+
+def split_dataset(
+    dataset: list[str],
+    method: Literal["threshold", "umap"] = "threshold",
+    validation_fraction: float = 0.1,
+    test_fraction: float = 0.1,
+    min_ratio: float = 0.7,
+    random_state: int = 42,
+    mces_matrix_save_path: str | None = None,
+    **kwargs: Any,
+) -> Dict[str, Any]:
+    """
+    High-level dispatcher for MCES-based dataset splitting.
+
+    Parameters
+    ----------
+    dataset : list[str]
+        List of SMILES strings.
+    method : "threshold" | "umap"
+        Splitting strategy:
+
+        * ``"threshold"`` — cluster molecules by connected components of the
+          lower-bound distance matrix below an adaptive threshold, then assign
+          clusters to train/validation/test.
+        * ``"umap"`` — embed the lower-bound distance matrix with UMAP, cluster
+          the embedding with HDBSCAN (falling back to k-means if too few
+          clusters are found), then assign clusters to splits.
+    validation_fraction : float
+        Target fraction for the validation set.
+    test_fraction : float
+        Target fraction for the test set.
+    min_ratio : float
+        Minimum required size ratio for validation/test vs target.
+    random_state : int
+        Random seed passed through to the chosen method (UMAP / cluster
+        shuffling).
+    mces_matrix_save_path : str | None
+        If provided, saves the lower-bound distance matrix to this path as a
+        ``.npy`` file.
+    **kwargs
+        Additional keyword arguments forwarded to the underlying splitter.
+        For ``method="threshold"`` this includes
+        ``initial_distinction_threshold``, ``min_distinction_threshold``,
+        ``threshold_step``.
+        For ``method="umap"`` this includes ``hdbscan_kwargs`` and any UMAP
+        keyword arguments such as ``n_components``, ``n_neighbors``, ``min_dist``.
+
+    Returns
+    -------
+    dict
+        Dictionary with keys ``"train"``, ``"validation"``, ``"test"``. For
+        ``method="threshold"`` it also contains ``"threshold"``. For
+        ``method="umap"`` it also contains ``"bounds_matrix"`` and
+        ``"umap_embedding"``.
+    """
+    if method == "threshold":
+        train_set, validation_set, test_set, threshold = split_dataset_adaptive_threshold(
+            dataset,
+            validation_fraction=validation_fraction,
+            test_fraction=test_fraction,
+            min_ratio=min_ratio,
+            mces_matrix_save_path=mces_matrix_save_path,
+            **kwargs,
+        )
+        return {
+            "train": train_set,
+            "validation": validation_set,
+            "test": test_set,
+            "threshold": threshold,
+        }
+
+    if method == "umap":
+        train_set, validation_set, test_set, bounds_matrix, embedding = split_dataset_umap(
+            dataset,
+            validation_fraction=validation_fraction,
+            test_fraction=test_fraction,
+            min_ratio=min_ratio,
+            random_state=random_state,
+            mces_matrix_save_path=mces_matrix_save_path,
+            **kwargs,
+        )
+        return {
+            "train": train_set,
+            "validation": validation_set,
+            "test": test_set,
+            "bounds_matrix": bounds_matrix,
+            "umap_embedding": embedding,
+        }
+
+    raise ValueError(f"Unknown splitting method: {method!r}. Use 'threshold' or 'umap'.")
 
 
 if __name__ == "__main__":

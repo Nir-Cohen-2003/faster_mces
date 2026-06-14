@@ -3,3 +3,4 @@ from .mces import exact_mces_for_list_of_pairs
 from .dataset_splitting import split_dataset_adaptive_threshold as split_dataset_lower_bound_only
 from .dataset_splitting import split_dataset_brute_force_exact as split_dataset_with_exact_mces
 from .dataset_splitting import split_dataset_umap
+from .dataset_splitting import split_dataset
