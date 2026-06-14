@@ -586,3 +586,329 @@ def split_dataset_brute_force_exact(
             bounds_matrix = enhanced_matrix
     
     raise RuntimeError("Could not split dataset with given parameters and thresholds, even with brute force exact calculations.")
+
+
+def split_dataset_umap(
+    dataset: list[str],
+    validation_fraction: float = 0.1,
+    test_fraction: float = 0.1,
+    min_ratio: float = 0.7,
+    random_state: int = 42,
+    mces_matrix_save_path: str | None = None,
+    hdbscan_kwargs: dict | None = None,
+    **umap_kwargs,
+) -> Tuple[list[str], list[str], list[str], np.ndarray, np.ndarray]:
+    """
+    Split a molecular dataset using UMAP on the precomputed MCES lower-bound
+    distance matrix, followed by HDBSCAN clustering of the UMAP embedding.
+
+    Each molecule is embedded into low-dimensional space via UMAP using the
+    symmetric MCES lower-bound matrix as a precomputed distance matrix. The
+    embedding is then clustered with HDBSCAN. Noise points are treated as
+    singleton clusters so that the round-robin assignment still has enough
+    granularity. Clusters are distributed across train/validation/test so that
+    each split covers the structural diversity represented in the UMAP space.
+
+    Parameters
+    ----------
+    dataset : list[str]
+        List of SMILES strings.
+    validation_fraction : float
+        Target fraction for the validation set.
+    test_fraction : float
+        Target fraction for the test set.
+    min_ratio : float
+        Minimum required size ratio for validation/test vs target.
+    random_state : int
+        Random seed for UMAP reproducibility and for cluster shuffling.
+    mces_matrix_save_path : str | None
+        If provided, saves the lower-bound distance matrix to this path as a
+        ``.npy`` file.
+    hdbscan_kwargs : dict | None
+        Optional keyword arguments passed to ``hdbscan.HDBSCAN``. Defaults are
+        chosen to work for a wide range of dataset sizes.
+    **umap_kwargs
+        Keyword arguments passed to ``umap.UMAP``. ``metric`` is fixed to
+        ``"precomputed"``. ``random_state`` defaults to the value of
+        ``random_state``. ``n_neighbors`` is capped at ``n - 1``.
+
+    Returns
+    -------
+    Tuple[list[str], list[str], list[str], np.ndarray, np.ndarray]
+        (train_set, validation_set, test_set, bounds_matrix, umap_embedding)
+    """
+    try:
+        import umap
+        import hdbscan
+    except ImportError as exc:  # pragma: no cover
+        raise ImportError(
+            "split_dataset_umap requires 'umap-learn' and 'hdbscan'. "
+            "Install them (e.g. 'pip install umap-learn hdbscan') and retry."
+        ) from exc
+
+    n = len(dataset)
+    if n < 2:
+        raise ValueError("Dataset must contain at least 2 molecules for UMAP splitting.")
+
+    print(f"Calculating lower bounds matrix for {n} molecules using C++ implementation...")
+    bounds_matrix = mces_lower_bound_symmetric(dataset.copy())
+    if mces_matrix_save_path is not None:
+        np.save(mces_matrix_save_path, bounds_matrix)
+
+    if n < 20:
+        print("Lower bounds matrix:")
+        print(bounds_matrix)
+
+    # Ensure the matrix is symmetric (defensive; the C++ implementation already
+    # returns a symmetric matrix, but this also handles triangular inputs).
+    bounds_matrix = np.maximum(bounds_matrix, bounds_matrix.T)
+
+    # UMAP parameters: metric is fixed to precomputed, n_neighbors is capped so
+    # that it is valid for small datasets, and random_state is exposed.
+    effective_umap_kwargs = {
+        "n_components": 2,
+        "min_dist": 0.1,
+        "metric": "precomputed",
+        "random_state": random_state,
+        "n_neighbors": min(15, n - 1),
+    }
+    effective_umap_kwargs.update(umap_kwargs)
+    effective_umap_kwargs["metric"] = "precomputed"
+
+    print(f"Running UMAP with parameters: {effective_umap_kwargs}")
+    reducer = umap.UMAP(**effective_umap_kwargs)
+    embedding = reducer.fit_transform(bounds_matrix)
+
+    # HDBSCAN defaults chosen to avoid degenerate behavior on small datasets.
+    effective_hdbscan_kwargs = {
+        "min_cluster_size": max(2, min(5, n // 5)),
+        "min_samples": 1,
+        "allow_single_cluster": False,
+    }
+    if hdbscan_kwargs is not None:
+        effective_hdbscan_kwargs.update(hdbscan_kwargs)
+
+    print(f"Running HDBSCAN with parameters: {effective_hdbscan_kwargs}")
+    clusterer = hdbscan.HDBSCAN(**effective_hdbscan_kwargs)
+    labels = clusterer.fit_predict(embedding)
+
+    # Build clusters from HDBSCAN labels. Noise points (label -1) are treated as
+    # singleton clusters so that round-robin assignment still works.
+    cluster_dict: dict[int, list[int]] = {}
+    noise_indices: list[int] = []
+    for idx, label in enumerate(labels):
+        if label == -1:
+            noise_indices.append(idx)
+        else:
+            cluster_dict.setdefault(label, []).append(idx)
+
+    cluster_list = list(cluster_dict.values())
+    for idx in noise_indices:
+        cluster_list.append([idx])
+
+    # Fallback: density clustering can collapse to a single cluster (or only
+    # noise) on small or very homogeneous datasets. In that case, partition the
+    # UMAP embedding with k-means so that we still have enough clusters to
+    # distribute across splits while preserving spatial diversity.
+    min_clusters_needed = max(3, int(1.0 / max(validation_fraction, test_fraction)))
+    if len(cluster_list) < min_clusters_needed:
+        from scipy.cluster.vq import kmeans2
+
+        k = min(n, max(min_clusters_needed, len(cluster_list) + min_clusters_needed))
+        print(
+            f"HDBSCAN produced only {len(cluster_list)} cluster(s); "
+            f"falling back to k-means with k={k} on the UMAP embedding."
+        )
+        centroid, labels = kmeans2(embedding, k, seed=random_state)
+        cluster_dict = {}
+        for idx, label in enumerate(labels):
+            cluster_dict.setdefault(int(label), []).append(idx)
+        cluster_list = list(cluster_dict.values())
+
+    rng = random.Random(random_state)
+    rng.shuffle(cluster_list)
+
+    # Distribute clusters across splits using the same size-aware round-robin
+    # logic as the threshold-based splitters.
+    train_indices: list[int] = []
+    validation_indices: list[int] = []
+    test_indices: list[int] = []
+
+    validation_size = int(n * validation_fraction)
+    test_size = int(n * test_fraction)
+    # Use a slightly more permissive threshold than the threshold-based splitters
+    # so that small datasets (where clusters are naturally small) still have
+    # enough eligible clusters to fill validation and test sets.
+    large_cluster_threshold = max(validation_size, test_size) // 2 + 1
+
+    large_clusters = [c for c in cluster_list if len(c) > large_cluster_threshold]
+    small_clusters = [c for c in cluster_list if len(c) <= large_cluster_threshold]
+
+    for cluster in large_clusters:
+        train_indices.extend(cluster)
+
+    # Sort small clusters by size (smallest first) for better packing.
+    small_clusters.sort(key=len)
+
+    for cluster in small_clusters:
+        cluster_size = len(cluster)
+        target_validation = validation_size - len(validation_indices)
+        target_test = test_size - len(test_indices)
+
+        if len(validation_indices) < validation_size and len(test_indices) < test_size:
+            val_room = target_validation
+            test_room = target_test
+            if val_room >= test_room and cluster_size <= val_room * 1.1:
+                validation_indices.extend(cluster)
+            elif cluster_size <= test_room * 1.1:
+                test_indices.extend(cluster)
+            elif cluster_size <= val_room * 1.1:
+                validation_indices.extend(cluster)
+            else:
+                train_indices.extend(cluster)
+        elif len(validation_indices) < validation_size:
+            if cluster_size <= target_validation * 1.1:
+                validation_indices.extend(cluster)
+            else:
+                train_indices.extend(cluster)
+        elif len(test_indices) < test_size:
+            if cluster_size <= target_test * 1.1:
+                test_indices.extend(cluster)
+            else:
+                train_indices.extend(cluster)
+        else:
+            train_indices.extend(cluster)
+
+    train_set = [dataset[i] for i in train_indices]
+    validation_set = [dataset[i] for i in validation_indices]
+    test_set = [dataset[i] for i in test_indices]
+
+    min_val = int(n * validation_fraction * min_ratio)
+    min_test = int(n * test_fraction * min_ratio)
+
+    if len(validation_set) >= min_val and len(test_set) >= min_test:
+        print(
+            f"UMAP split succeeded: train={len(train_set)}, "
+            f"val={len(validation_set)}, test={len(test_set)}, "
+            f"clusters={len(cluster_dict)}, noise={len(noise_indices)}"
+        )
+        return train_set, validation_set, test_set, bounds_matrix, embedding
+
+    raise RuntimeError(
+        f"Could not split dataset with UMAP. "
+        f"validation={len(validation_set)} (need {min_val}), "
+        f"test={len(test_set)} (need {min_test})."
+    )
+
+
+if __name__ == "__main__":
+    from time import perf_counter
+    from hrms_utils.rdkit import sanitize_smiles_polars
+    # Load DSSTox CSV next to the src directory (one level up from this file)
+    csv_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "dsstox_smiles_medium.csv"))
+    if not os.path.exists(csv_path):
+        raise FileNotFoundError(f"CSV file not found at {csv_path}")
+
+    # Read the single-column CSV ("MS_READY_SMILES"), sanitize and filter empty entries
+    nist_smiles: List[str] = pl.scan_csv(csv_path).select("MS_READY_SMILES").unique(maintain_order=True).with_columns(
+        pl.col("MS_READY_SMILES").map_batches(function=sanitize_smiles_polars, return_dtype=pl.String)
+    ).filter(
+        pl.col("MS_READY_SMILES").is_not_null(),
+        pl.col("MS_READY_SMILES").ne("")
+    ).collect().to_series().to_list()
+    if any(smile == "=" for smile in nist_smiles):
+        raise ValueError("Invalid SMILES found in dataset. Please check the input data.")
+    # Create data directory if it doesn't exist
+    os.makedirs(os.path.join(os.path.dirname(__file__), "__pycache__"), exist_ok=True)
+
+    start = perf_counter()
+    train_set, validation_set, test_set, threshold_adaptive = split_dataset_adaptive_threshold(
+        nist_smiles.copy(),
+        validation_fraction=0.1,
+        test_fraction=0.1,
+        initial_distinction_threshold=10,
+        min_distinction_threshold=0,
+        threshold_step=-1,
+        # mces_matrix_save_path=os.path.join(os.path.dirname(__file__), "__pycache__", "mces_matrix.npy")
+        
+    )  # type: Tuple[List[str], List[str], List[str], int]
+    end = perf_counter()
+    adaptive_time = end - start
+    # now write the sets to files named train_set.parquet, validation_set.parquet, test_set.parquet
+    # pl.DataFrame({"CanonicalSMILES": train_set}).write_parquet(os.path.join(os.path.dirname(__file__), "__pycache__", "train_set.parquet"))
+    # pl.DataFrame({"CanonicalSMILES": validation_set}).write_parquet(os.path.join(os.path.dirname(__file__), "__pycache__", "validation_set.parquet"))
+    # pl.DataFrame({"CanonicalSMILES": test_set}).write_parquet(os.path.join(os.path.dirname(__file__), "__pycache__", "test_set.parquet"))
+    print(f"Training set size: {len(train_set)}")
+    print(f"Validation set size: {len(validation_set)}")
+    print(f"Test set size: {len(test_set)}")
+    print(f"Total size: {len(nist_smiles)}")
+    print(f"Time taken: {adaptive_time:.2f} seconds")
+
+    # # now use the selective exact calculation method
+    # start = perf_counter()
+    # train_set, validation_set, test_set, threshold_selective_exact = split_dataset_with_selective_exact_calculation(
+    #     nist_smiles.copy(),
+    #     validation_fraction=0.1,
+    #     test_fraction=0.1,
+    #     initial_distinction_threshold=10,
+    #     min_distinction_threshold=0,
+    #     threshold_step=-1,
+    #     max_exact_calculations=10_000,
+    # )  # type: Tuple[List[str], List[str], List[str], int]
+    # end = perf_counter()
+    # selective_time = end - start
+
+    # # # now write them to similar files, but add _with_exact to the names
+    # # pl.DataFrame({"CanonicalSMILES": train_set}).write_parquet(os.path.join(os.path.dirname(__file__), "__pycache__", "train_set_with_exact.parquet"))
+    # # pl.DataFrame({"CanonicalSMILES": validation_set}).write_parquet(os.path.join(os.path.dirname(__file__), "__pycache__", "validation_set_with_exact.parquet"))
+    # # pl.DataFrame({"CanonicalSMILES": test_set}).write_parquet(os.path.join(os.path.dirname(__file__), "__pycache__", "test_set_with_exact.parquet"))
+
+    # print(f"Training set size: {len(train_set)}")
+    # print(f"Validation set size: {len(validation_set)}")
+    # print(f"Test set size: {len(test_set)}")
+    # print(f"Total size: {len(nist_smiles)}")
+    # print(f"Time taken (selective): {selective_time:.2f} seconds")
+    
+    # print(f"Adaptive threshold: {threshold}")
+    # print(f"Selective exact calculation threshold: {threshold}")
+    # print(f"Adaptive time: {adaptive_time:.2f} seconds")
+    # print(f"Selective exact calculation time: {selective_time:.2f} seconds")
+    # print(f"Speedup of forgoing exact calculations: {selective_time / adaptive_time:.2f}x")
+
+
+    # now use the brute force exact calculation method
+    start = perf_counter()
+    train_set, validation_set, test_set, threshold_brute_force = split_dataset_brute_force_exact(
+        nist_smiles.copy(),
+        validation_fraction=0.1,
+        test_fraction=0.1,
+        initial_distinction_threshold=10,
+        min_distinction_threshold=0,
+        threshold_step=-1,
+        max_exact_calculations=30_000,
+    )  # type: Tuple[List[str], List[str], List[str], int]
+    end = perf_counter()
+    brute_force_time = end - start
+
+    # # now write them to similar files, but add _brute_force to the names
+    # pl.DataFrame({"CanonicalSMILES": train_set}).write_parquet(os.path.join(os.path.dirname(__file__), "__pycache__", "train_set_brute_force.parquet"))
+    # pl.DataFrame({"CanonicalSMILES": validation_set}).write_parquet(os.path.join(os.path.dirname(__file__), "__pycache__", "validation_set_brute_force.parquet"))
+    # pl.DataFrame({"CanonicalSMILES": test_set}).write_parquet(os.path.join(os.path.dirname(__file__), "__pycache__", "test_set_brute_force.parquet"))
+
+    print(f"\n=== BRUTE FORCE EXACT RESULTS ===")
+    print(f"Training set size: {len(train_set)}")
+    print(f"Validation set size: {len(validation_set)}")
+    print(f"Test set size: {len(test_set)}")
+    print(f"Total size: {len(nist_smiles)}")
+    print(f"Time taken (brute force): {brute_force_time:.2f} seconds")
+    
+    print(f"\n=== COMPARISON ===")
+    print(f"Adaptive threshold: {threshold_adaptive}")
+    # print(f"Selective exact calculation threshold: {threshold_selective_exact}")
+    print(f"Brute force exact calculation threshold: {threshold_brute_force}")
+    print(f"Adaptive time: {adaptive_time:.2f} seconds")
+    # print(f"Selective exact calculation time: {selective_time:.2f} seconds")
+    print(f"Brute force exact calculation time: {brute_force_time:.2f} seconds")
+    # print(f"Selective vs Adaptive speedup: {selective_time / adaptive_time:.2f}x")
+    print(f"Brute force vs Adaptive is lower by: {brute_force_time / adaptive_time:.2f}x")
+    # print(f"Selective vs Brute force speedup: {selective_time / brute_force_time:.2f}x")
