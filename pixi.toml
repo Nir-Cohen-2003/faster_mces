@@ -1,10 +1,17 @@
 [workspace]
 authors = ["Nir"]
-channels = ["https://prefix.dev/conda-forge","https://prefix.dev/nir-cohen"]
+channels = [
+    "https://prefix.dev/rapidsai",
+    "https://prefix.dev/conda-forge",
+    "https://prefix.dev/nvidia",
+    "https://prefix.dev/nir-cohen"
+]
 name = "mces_splitting"
 platforms = ["linux-64"]
 preview = ["pixi-build"]
-    
+channel-priority = "disabled"
+[system-requirements]
+cuda = "13.0"
 [package]
 name = "mces_splitting"
 version = "0.4.0"
@@ -16,6 +23,7 @@ splitting_test = "python tests/splitting_test.py --skip-exact 2000"
 splitting_test_exact = "python tests/splitting_test.py 2000"
 splitting_test_full = "python tests/splitting_test.py"
 bounds_validity_test = "python tests/bounds_test.py"
+benchmark_cuopt = "python benchmarks/benchmark_cuopt.py"
 publish-prefix = {cmd="rattler-build upload prefix --channel nir-cohen"}
 publish-anaconda = {cmd="rattler-build upload anaconda --owner Nir_Cohen --channel main"}
 
@@ -23,20 +31,22 @@ publish-anaconda = {cmd="rattler-build upload anaconda --owner Nir_Cohen --chann
 mces_splitting = { path = "." }
 python = "3.12.*"
 hrms_utils = ">=0.6.2"
+psutil = "*"
+nvidia-ml-py = "*"
 
 [pypi-dependencies]
 ipykernel = "*"
 
 
-[package.build] 
+[package.build]
 backend = { name = "pixi-build-python", version = ">=0.3.2" }
 
-[package.host-dependencies] 
+[package.host-dependencies]
 python = "*"
 pip = "*"
 hatchling = "*"
 
-[package.run-dependencies] 
+[package.run-dependencies]
 fast_mces_lower_bound = ">=1.1.0"
 rdkit = ">=2024.0.0"
 polars = ">=1.32.0,<2"
@@ -46,3 +56,5 @@ networkx = "*"
 pulp = "*"
 umap-learn = "*"
 hdbscan = "*"
+cuopt="26.06.*"
+cupy = { version = ">=13.6.0", channel = "conda-forge" }
