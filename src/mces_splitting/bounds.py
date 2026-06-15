@@ -4,7 +4,11 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 from collections import defaultdict
-from fast_mces_lower_bound import calculate_symmetric_distance_matrix, calculate_distance_matrix
+from fast_mces_lower_bound import (
+    calculate_symmetric_distance_matrix,
+    calculate_distance_matrix,
+    mces_distance_upper_bound,
+)
 
 def filter1(G1: nx.Graph, G2: nx.Graph) -> float:
     """

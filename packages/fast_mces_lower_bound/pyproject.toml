@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "fast_mces_lower_bound"
-version = "0.2.0"
+version = "1.2.0"
 authors = [{name = "Nir"}]
 description = "Fast MCES utilities"
 dependencies = [

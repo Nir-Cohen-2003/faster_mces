@@ -23,6 +23,7 @@ splitting_test = "python tests/splitting_test.py --skip-exact 2000"
 splitting_test_exact = "python tests/splitting_test.py 2000"
 splitting_test_full = "python tests/splitting_test.py"
 bounds_validity_test = "python tests/bounds_test.py"
+upper_bound_test = "python tests/test_mces_upper_bound_vs_exact.py"
 benchmark_cuopt = "python benchmarks/benchmark_cuopt.py"
 publish-prefix = {cmd="rattler-build upload prefix --channel nir-cohen"}
 publish-anaconda = {cmd="rattler-build upload anaconda --owner Nir_Cohen --channel main"}
@@ -47,7 +48,7 @@ pip = "*"
 hatchling = "*"
 
 [package.run-dependencies]
-fast_mces_lower_bound = ">=1.1.0"
+fast_mces_lower_bound = { path = "packages/fast_mces_lower_bound" }
 rdkit = ">=2024.0.0"
 polars = ">=1.32.0,<2"
 numpy = ">=2.0.0,<2.3.0"

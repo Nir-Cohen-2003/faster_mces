@@ -5,7 +5,7 @@ preview = ["pixi-build"]
 
 [package]
 name = "fast_mces_lower_bound"
-version = "0.2.0"
+version = "1.2.0"
 license = "Apache-2.0"
 license-file = "LICENSE"
 authors = ["Nir Cohen"]
