@@ -2,33 +2,34 @@
 channels = ["conda-forge"]
 platforms = ["linux-64", "win-64"]
 preview = ["pixi-build"]
+
 [package]
 name = "fast_mces_lower_bound"
+version = "0.2.0"
 license = "Apache-2.0"
 license-file = "LICENSE"
 authors = ["Nir Cohen"]
+
 [package.build]
 backend = { name = "pixi-build-rattler-build", version = "*" }
-
-[environments]
-default = { solve-group = "default" }
-test = { features = ["test"], solve-group = "default" }
-
-[feature.test.tasks]
-test = "python tests/test.py"
-benchmark = "python tests/benchmark.py"
-
-[feature.test.dependencies]
-pytest = "*"
-numpy = "*"
-polars = "*"
-pyarrow = "*"
-tqdm = "*"
-rdkit = "*"
-psutil = "*"
-fast_mces_lower_bound = { path = "." }
 
 [dependencies]
 python = "3.12.*"
 rattler-build = "*"
 fast_mces_lower_bound = { path = "." }
+
+[feature.test.dependencies]
+pytest = "*"
+networkx = "*"
+rdkit = "*"
+numpy = "*"
+fast_mces_lower_bound = { path = "." }
+
+[feature.test.tasks]
+test = "python tests/test.py"
+benchmark = "python tests/benchmark.py"
+upper_bound_test = "python tests/test_upper_bound.py"
+
+[environments]
+default = { solve-group = "default" }
+test = { features = ["test"], solve-group = "default" }

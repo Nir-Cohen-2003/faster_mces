@@ -88,7 +88,7 @@ elseif (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Ox")
 endif()
 
-add_library(mces_lower_bound src/cpp_filter.cpp src/lap.cpp)
+add_library(mces_lower_bound src/cpp_filter.cpp src/lap.cpp src/mces_upper_bound.cpp)
 set_target_properties(mces_lower_bound PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # propagate compile-time flags to the target(s)
@@ -134,7 +134,7 @@ install(TARGETS mces_lower_bound
     ARCHIVE DESTINATION lib
     INCLUDES DESTINATION include
 )
-install(FILES src/cpp_filter.hpp DESTINATION include/fast_mces_lower_bound)
+install(FILES src/cpp_filter.hpp src/mces_upper_bound.hpp DESTINATION include/fast_mces_lower_bound)
 
 nanobind_add_module(fast_mces_lower_bound STABLE_ABI src/pybind.cpp)
 target_link_directories(fast_mces_lower_bound PRIVATE ${RDKIT_LIB_DIR})
