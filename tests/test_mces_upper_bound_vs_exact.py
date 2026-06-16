@@ -10,19 +10,20 @@ This test is intentionally standalone: it only uses the public API exposed by
 Only the disconnected MCES mode is exposed/used, because the top-level ILP
 solves MCES (not MCS/connected mode).
 
-IMPORTANT: the two functions compute *different* distance metrics.
+Both functions now report the *same* distance metric (the weighted ILP cost):
 
-* The C++ upper bound uses exact bond + atom labels (bond type, aromaticity,
-  atomic number, degree, formal charge). Its "distance" is
-  ``|E1| + |E2| - 2*k`` where ``k`` is the number of exactly-matched bonds.
 * The top-level ILP uses only the atom symbol and penalises bond-order
   differences. Its distance is the minimum total weight of unmapped bonds plus
   bond-order differences for mapped bonds.
+* The C++ upper bound reports exactly that same metric for the clique it
+  finds. Because the C++ compatibility is stricter than the ILP's (exact atom
+  labels + exact bond type), every clique returned by the C++ code is a
+  feasible ILP matching, and the weighted cost of that matching is therefore a
+  valid upper bound on the ILP optimum.
 
-Therefore the C++ value is **not guaranteed** to be an upper bound on the ILP
-value. The numpy "validation" here simply reports the distribution of
-``upper - exact``; negative values mean the C++ heuristic underestimated the
-ILP distance.
+The numpy "validation" here reports the distribution of ``upper - exact``;
+negative values would mean the C++ heuristic underestimated the ILP distance,
+which should not happen.
 """
 import numpy as np
 import pulp
@@ -54,12 +55,16 @@ SMILES_LIST = [
 ]
 
 
-def _upper_distance(s1: str, s2: str, num_starts: int = 200) -> int:
-    """Disconnected MCES upper bound using the C++ clique heuristic."""
+def _upper_distance(s1: str, s2: str, num_starts: int = 200) -> float:
+    """Disconnected MCES upper bound using the C++ clique heuristic.
+
+    The C++ function reports the weighted ILP distance for the clique it
+    finds, which is guaranteed to be an upper bound on the ILP distance.
+    """
     res = mces_distance_upper_bound(
         s1, s2, {"connected": False, "num_starts": num_starts}
     )
-    return int(res["distance_upper_bound"])
+    return float(res["distance_upper_bound"])
 
 
 def _exact_distance_matrix(smiles_list: list[str]) -> np.ndarray:
@@ -91,7 +96,7 @@ def _exact_distance_matrix(smiles_list: list[str]) -> np.ndarray:
 def _upper_distance_matrix(smiles_list: list[str]) -> np.ndarray:
     """All-to-all upper-bound distance matrix using the C++ heuristic."""
     n = len(smiles_list)
-    mat = np.zeros((n, n), dtype=int)
+    mat = np.zeros((n, n), dtype=float)
     for i in range(n):
         for j in range(i + 1, n):
             d = _upper_distance(smiles_list[i], smiles_list[j])

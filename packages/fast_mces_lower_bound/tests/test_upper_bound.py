@@ -122,11 +122,29 @@ def _validate_result(result, mol1, mol2, connected):
     assert meta["connected_mode"] == connected
     assert meta["compatibility_mode"] == "exact_bond_atom_labels"
     assert meta["clique_heuristic"] == "multi_start_greedy_degree"
+    assert "weighted" not in meta, "Legacy 'weighted' metadata should be removed"
 
     pairs = result["matched_edge_pairs"]
     assert isinstance(pairs, list)
     assert len(pairs) == result["matched_edge_count"]
-    assert result["distance_upper_bound"] == mol1.GetNumBonds() + mol2.GetNumBonds() - 2 * result["matched_edge_count"]
+
+    # The C++ upper bound always reports the weighted ILP distance for the
+    # clique it finds:
+    #   distance = sum of bond weights in G1 + sum in G2
+    #              - 2 * sum(min(g1.bond_type, g2.bond_type)) over matched pairs
+    def _bond_weight(mol, idx):
+        return mol.GetBondWithIdx(idx).GetBondTypeAsDouble()
+
+    total_w1 = sum(b.GetBondTypeAsDouble() for b in mol1.GetBonds())
+    total_w2 = sum(b.GetBondTypeAsDouble() for b in mol2.GetBonds())
+    matched_min = sum(
+        min(_bond_weight(mol1, e1), _bond_weight(mol2, e2)) for e1, e2 in pairs
+    )
+    expected = total_w1 + total_w2 - 2.0 * matched_min
+    assert result["distance_upper_bound"] == expected, (
+        f"Weighted distance mismatch: got {result['distance_upper_bound']}, "
+        f"expected {expected}"
+    )
 
     seen1, seen2 = set(), set()
     for e1, e2 in pairs:
@@ -164,24 +182,29 @@ def _test_pair(s1, s2, connected=False):
     mol2 = Chem.MolFromSmiles(s2)
     assert mol1 is not None and mol2 is not None
 
-    result = fast_mces_lower_bound.mces_distance_upper_bound(s1, s2, {"connected": connected, "num_starts": 200})
+    result = fast_mces_lower_bound.mces_distance_upper_bound(
+        s1, s2, {"connected": connected, "num_starts": 200},
+    )
     _validate_result(result, mol1, mol2, connected)
 
     exact_size = _exact_mces_size(mol1, mol2, connected=connected)
-    exact_distance = mol1.GetNumBonds() + mol2.GetNumBonds() - 2 * exact_size
-
+    # The exact reference we have here is in the unweighted count metric, so
+    # it isn't directly comparable to the weighted distance. We instead
+    # validate (a) the clique size does not exceed the exact maximum clique
+    # size, and (b) the weighted distance is non-negative and matches the
+    # weighted formula exactly (validated by _validate_result).
     assert result["matched_edge_count"] <= exact_size, (
         f"Upper bound exceeded exact MCES size for {s1} vs {s2} (connected={connected}): "
         f"{result['matched_edge_count']} > {exact_size}"
     )
-    assert result["distance_upper_bound"] >= exact_distance, (
-        f"Not an upper bound for {s1} vs {s2} (connected={connected}): "
-        f"{result['distance_upper_bound']} < {exact_distance}"
+    assert result["distance_upper_bound"] >= 0.0, (
+        f"Negative weighted distance for {s1} vs {s2}: "
+        f"{result['distance_upper_bound']}"
     )
 
     print(f"  {s1:25} vs {s2:25}  connected={connected}  "
           f"upper_k={result['matched_edge_count']}  exact_k={exact_size}  "
-          f"upper_d={result['distance_upper_bound']}  exact_d={exact_distance}")
+          f"upper_d={result['distance_upper_bound']}")
 
 
 def main():

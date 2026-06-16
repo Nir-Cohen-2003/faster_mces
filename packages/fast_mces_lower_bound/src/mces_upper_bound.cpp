@@ -473,7 +473,23 @@ McesUpperBoundResult mces_distance_upper_bound(const std::string& smiles1,
     for (const auto& nbrs : ag.neighbors) edge_count += static_cast<int>(nbrs.size());
     res.association_edge_count = edge_count / 2;
 
-    res.distance_upper_bound = g1.num_bonds + g2.num_bonds - 2 * res.matched_edge_count;
+    // Report the weighted ILP cost of the matched pairing:
+    // sum of bond weights in G1 + sum of bond weights in G2
+    //   - 2 * sum of min(g1.bond_type, g2.bond_type) over matched pairs
+    // The clique found here is feasible for the ILP (stricter atom/bond
+    // compatibility), so this is a valid upper bound on the ILP distance.
+    double total_weight_G1 = 0.0;
+    for (const auto& b : g1.bonds) total_weight_G1 += b.bond_type;
+    double total_weight_G2 = 0.0;
+    for (const auto& b : g2.bonds) total_weight_G2 += b.bond_type;
+
+    double matched_min_weight_sum = 0.0;
+    for (const auto& p : res.matched_edge_pairs) {
+        matched_min_weight_sum += std::min(g1.bonds[p.first].bond_type,
+                                           g2.bonds[p.second].bond_type);
+    }
+    res.distance_upper_bound = total_weight_G1 + total_weight_G2
+                                - 2.0 * matched_min_weight_sum;
 
     auto t1 = steady_clock::now();
     res.runtime_ms = static_cast<int>(duration_cast<milliseconds>(t1 - t0).count());

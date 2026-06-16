@@ -9,7 +9,7 @@
 struct McesUpperBoundResult {
     std::vector<std::pair<int, int>> matched_edge_pairs;
     int matched_edge_count = 0;
-    int distance_upper_bound = 0;
+    double distance_upper_bound = 0.0;
     int association_vertex_count = 0;
     int association_edge_count = 0;
     int runtime_ms = 0;

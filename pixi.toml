@@ -24,6 +24,7 @@ splitting_test_exact = "python tests/splitting_test.py 2000"
 splitting_test_full = "python tests/splitting_test.py"
 bounds_validity_test = "python tests/bounds_test.py"
 upper_bound_test = "python tests/test_mces_upper_bound_vs_exact.py"
+benchmark_bounds = "python benchmarks/benchmark_bounds.py"
 benchmark_cuopt = "python benchmarks/benchmark_cuopt.py"
 publish-prefix = {cmd="rattler-build upload prefix --channel nir-cohen"}
 publish-anaconda = {cmd="rattler-build upload anaconda --owner Nir_Cohen --channel main"}
