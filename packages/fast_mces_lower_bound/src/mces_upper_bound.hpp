@@ -20,8 +20,17 @@ struct McesUpperBoundResult {
 };
 
 McesUpperBoundResult mces_distance_upper_bound(const std::string& smiles1,
-                                                const std::string& smiles2,
-                                                bool connected = false,
-                                                int num_starts = 100);
+                                                 const std::string& smiles2,
+                                                 bool connected = false,
+                                                 int num_starts = 100);
+
+std::vector<double> upper_bound_symmetric_matrix(const std::vector<std::string>& smiles_list,
+                                                  bool connected = false,
+                                                  int num_starts = 100);
+
+std::vector<double> upper_bound_matrix(const std::vector<std::string>& smiles_list1,
+                                        const std::vector<std::string>& smiles_list2,
+                                        bool connected = false,
+                                        int num_starts = 100);
 
 #endif // MCES_UPPER_BOUND_HPP

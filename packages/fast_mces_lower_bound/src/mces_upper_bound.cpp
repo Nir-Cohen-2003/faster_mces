@@ -9,6 +9,8 @@
 #include <chrono>
 #include <map>
 #include <memory>
+#include <numeric>
+#include <omp.h>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -44,16 +46,19 @@ struct BondInfo {
     bool aromatic = false;
     AtomLabel label_u;
     AtomLabel label_v;
+    std::string line_label; // cached line-vertex label
 };
 
 struct MoleculeGraph {
-    std::unique_ptr<RDKit::ROMol> mol;
     std::vector<BondInfo> bonds;
     int num_bonds = 0;
     // bond_adj[i][j] == 1 iff bonds i and j share an atom in the original molecule
     std::vector<std::vector<char>> bond_adj;
     // shared_label[i][j] valid when bond_adj[i][j] == 1
     std::vector<std::vector<AtomLabel>> shared_label;
+    // line-graph neighbours for each bond (bonds that share an atom)
+    std::vector<std::vector<int>> bond_neighbors;
+    double total_bond_weight = 0.0;
 };
 
 static AtomLabel make_atom_label(const RDKit::Atom* atom) {
@@ -73,7 +78,6 @@ static std::string atom_label_string(const AtomLabel& lab) {
 }
 
 static std::string bond_label_string(double bond_type, bool aromatic) {
-    // Use a normalized representation.
     return std::to_string(bond_type) + "#" + (aromatic ? "A" : "N");
 }
 
@@ -86,16 +90,18 @@ static std::string line_vertex_label(const BondInfo& b) {
 }
 
 static MoleculeGraph build_molecule_graph(const std::string& smiles) {
-    MoleculeGraph g;
-    g.mol.reset(RDKit::SmilesToMol(smiles));
-    if (!g.mol) {
+    std::unique_ptr<RDKit::ROMol> mol(RDKit::SmilesToMol(smiles));
+    if (!mol) {
         throw std::runtime_error("Failed to parse SMILES: " + smiles);
     }
 
-    const int nb = static_cast<int>(g.mol->getNumBonds());
+    MoleculeGraph g;
+    const int nb = static_cast<int>(mol->getNumBonds());
     g.num_bonds = nb;
     g.bonds.reserve(nb);
-    for (const auto* bond : g.mol->bonds()) {
+    g.total_bond_weight = 0.0;
+
+    for (const auto* bond : mol->bonds()) {
         BondInfo info;
         info.idx = static_cast<int>(bond->getIdx());
         const RDKit::Atom* a1 = bond->getBeginAtom();
@@ -106,17 +112,20 @@ static MoleculeGraph build_molecule_graph(const std::string& smiles) {
         info.aromatic = bond->getIsAromatic();
         info.label_u = make_atom_label(a1);
         info.label_v = make_atom_label(a2);
-        g.bonds.push_back(info);
+        info.line_label = line_vertex_label(info);
+        g.total_bond_weight += info.bond_type;
+        g.bonds.push_back(std::move(info));
     }
 
     g.bond_adj.assign(nb, std::vector<char>(nb, 0));
     g.shared_label.assign(nb, std::vector<AtomLabel>(nb));
+    g.bond_neighbors.assign(nb, {});
 
     // For each atom, connect all incident bonds in the line graph.
-    for (const auto* atom : g.mol->atoms()) {
+    for (const auto* atom : mol->atoms()) {
         std::vector<int> incident;
-        for (const auto* nbond : g.mol->atomNeighbors(atom)) {
-            const RDKit::Bond* bond = g.mol->getBondBetweenAtoms(
+        for (const auto* nbond : mol->atomNeighbors(atom)) {
+            const RDKit::Bond* bond = mol->getBondBetweenAtoms(
                 atom->getIdx(), nbond->getIdx());
             if (bond) incident.push_back(static_cast<int>(bond->getIdx()));
         }
@@ -131,6 +140,18 @@ static MoleculeGraph build_molecule_graph(const std::string& smiles) {
                 g.shared_label[b2][b1] = shared;
             }
         }
+        // Build bond adjacency lists (line-graph neighbours) from the same atom.
+        for (size_t i = 0; i < incident.size(); ++i) {
+            for (size_t j = 0; j < incident.size(); ++j) {
+                if (i == j) continue;
+                g.bond_neighbors[incident[i]].push_back(static_cast<int>(incident[j]));
+            }
+        }
+    }
+
+    for (auto& nbrs : g.bond_neighbors) {
+        std::sort(nbrs.begin(), nbrs.end());
+        nbrs.erase(std::unique(nbrs.begin(), nbrs.end()), nbrs.end());
     }
 
     return g;
@@ -154,10 +175,10 @@ static AssociationGraph build_association_graph(const MoleculeGraph& g1,
     // Bucket line-graph vertices by their canonical label.
     std::map<std::string, std::vector<int>> classes1, classes2;
     for (int i = 0; i < g1.num_bonds; ++i) {
-        classes1[line_vertex_label(g1.bonds[i])].push_back(i);
+        classes1[g1.bonds[i].line_label].push_back(i);
     }
     for (int j = 0; j < g2.num_bonds; ++j) {
-        classes2[line_vertex_label(g2.bonds[j])].push_back(j);
+        classes2[g2.bonds[j].line_label].push_back(j);
     }
 
     for (const auto& [label, vec1] : classes1) {
@@ -193,6 +214,10 @@ static AssociationGraph build_association_graph(const MoleculeGraph& g1,
         }
     }
 
+    for (auto& nbrs : ag.neighbors) {
+        std::sort(nbrs.begin(), nbrs.end());
+    }
+
     ag.degree.resize(n);
     for (int i = 0; i < n; ++i) ag.degree[i] = static_cast<int>(ag.neighbors[i].size());
 
@@ -217,18 +242,9 @@ static std::vector<int> intersect_sorted(const std::vector<int>& a,
     return out;
 }
 
-static bool is_adjacent_to_any(int bond_idx,
-                               const std::vector<int>& selected_bonds,
-                               const std::vector<std::vector<char>>& bond_adj) {
-    for (int sb : selected_bonds) {
-        if (bond_adj[bond_idx][sb]) return true;
-    }
-    return false;
-}
-
 static int select_best_candidate(const std::vector<int>& candidates,
-                                 const std::vector<std::vector<int>>& neighbors,
-                                 std::vector<char>& scratch) {
+                                  const std::vector<std::vector<int>>& neighbors,
+                                  std::vector<char>& scratch) {
     // Choose the candidate with the maximum number of neighbors inside candidates.
     int best = candidates[0];
     int best_score = -1;
@@ -249,10 +265,10 @@ static int select_best_candidate(const std::vector<int>& candidates,
 }
 
 static std::vector<int> greedy_clique(const AssociationGraph& ag,
-                                      const MoleculeGraph& g1,
-                                      const MoleculeGraph& g2,
-                                      bool connected,
-                                      int num_starts) {
+                                       const MoleculeGraph& g1,
+                                       const MoleculeGraph& g2,
+                                       bool connected,
+                                       int num_starts) {
     const int n = static_cast<int>(ag.vertices.size());
     if (n == 0) return {};
 
@@ -270,19 +286,19 @@ static std::vector<int> greedy_clique(const AssociationGraph& ag,
         int start = order[s_idx];
         std::vector<int> clique = {start};
         std::vector<int> candidates = ag.neighbors[start];
-        // Keep candidates sorted for deterministic intersection.
-        std::sort(candidates.begin(), candidates.end());
+        std::vector<int> raw_common = candidates;
 
-        std::vector<int> selected_g1_bonds = {ag.vertices[start].a};
-        std::vector<int> selected_g2_bonds = {ag.vertices[start].b};
+        std::vector<char> g1_adjacent_mask(g1.num_bonds, 0);
+        std::vector<char> g2_adjacent_mask(g2.num_bonds, 0);
+        for (int nb : g1.bond_neighbors[ag.vertices[start].a]) g1_adjacent_mask[nb] = 1;
+        for (int nb : g2.bond_neighbors[ag.vertices[start].b]) g2_adjacent_mask[nb] = 1;
 
         while (!candidates.empty()) {
-            if (connected && static_cast<int>(clique.size()) >= 1) {
+            if (connected) {
                 std::vector<int> filtered;
                 filtered.reserve(candidates.size());
                 for (int v : candidates) {
-                    if (is_adjacent_to_any(ag.vertices[v].a, selected_g1_bonds, g1.bond_adj) &&
-                        is_adjacent_to_any(ag.vertices[v].b, selected_g2_bonds, g2.bond_adj)) {
+                    if (g1_adjacent_mask[ag.vertices[v].a] && g2_adjacent_mask[ag.vertices[v].b]) {
                         filtered.push_back(v);
                     }
                 }
@@ -292,47 +308,38 @@ static std::vector<int> greedy_clique(const AssociationGraph& ag,
 
             int v = select_best_candidate(candidates, ag.neighbors, scratch);
             clique.push_back(v);
-            selected_g1_bonds.push_back(ag.vertices[v].a);
-            selected_g2_bonds.push_back(ag.vertices[v].b);
+            const int vb1 = ag.vertices[v].a;
+            const int vb2 = ag.vertices[v].b;
+            for (int nb : g1.bond_neighbors[vb1]) g1_adjacent_mask[nb] = 1;
+            for (int nb : g2.bond_neighbors[vb2]) g2_adjacent_mask[nb] = 1;
 
-            std::vector<int> v_neighbors = ag.neighbors[v];
-            std::sort(v_neighbors.begin(), v_neighbors.end());
+            const std::vector<int>& v_neighbors = ag.neighbors[v];
             candidates = intersect_sorted(candidates, v_neighbors);
+            raw_common = intersect_sorted(raw_common, v_neighbors);
         }
 
         // Simple local improvement: extend the clique while possible.
+        std::vector<char> in_clique(n, 0);
+        for (int v : clique) in_clique[v] = 1;
+        std::vector<int> common = raw_common;
+
         while (true) {
-            std::vector<char> in_clique(n, 0);
-            for (int v : clique) in_clique[v] = 1;
-
-            std::vector<int> common;
-            bool first = true;
-            for (int v : clique) {
-                if (first) {
-                    common = ag.neighbors[v];
-                    first = false;
-                } else {
-                    common = intersect_sorted(common, ag.neighbors[v]);
-                }
-                if (common.empty()) break;
-            }
-
             int add = -1;
             for (int v : common) {
-                if (!in_clique[v]) {
-                    if (!connected ||
-                        (is_adjacent_to_any(ag.vertices[v].a, selected_g1_bonds, g1.bond_adj) &&
-                         is_adjacent_to_any(ag.vertices[v].b, selected_g2_bonds, g2.bond_adj))) {
-                        add = v;
-                        break;
-                    }
+                if (in_clique[v]) continue;
+                if (!connected ||
+                    (g1_adjacent_mask[ag.vertices[v].a] && g2_adjacent_mask[ag.vertices[v].b])) {
+                    add = v;
+                    break;
                 }
             }
             if (add == -1) break;
 
             clique.push_back(add);
-            selected_g1_bonds.push_back(ag.vertices[add].a);
-            selected_g2_bonds.push_back(ag.vertices[add].b);
+            in_clique[add] = 1;
+            for (int nb : g1.bond_neighbors[ag.vertices[add].a]) g1_adjacent_mask[nb] = 1;
+            for (int nb : g2.bond_neighbors[ag.vertices[add].b]) g2_adjacent_mask[nb] = 1;
+            common = intersect_sorted(common, ag.neighbors[add]);
         }
 
         if (clique.size() > best_clique.size()) {
@@ -384,7 +391,7 @@ static void validate_result(const McesUpperBoundResult& res,
         if (e1 < 0 || e1 >= g1.num_bonds || e2 < 0 || e2 >= g2.num_bonds) {
             throw std::runtime_error("Matched bond index out of range");
         }
-        if (line_vertex_label(g1.bonds[e1]) != line_vertex_label(g2.bonds[e2])) {
+        if (g1.bonds[e1].line_label != g2.bonds[e2].line_label) {
             throw std::runtime_error("Vertex compatibility failed");
         }
         bonds1.push_back(e1);
@@ -441,20 +448,59 @@ static void validate_result(const McesUpperBoundResult& res,
     }
 }
 
+struct UpperBoundDetail {
+    double distance_upper_bound = 0.0;
+    std::vector<int> clique;
+    AssociationGraph ag;
+};
+
+static UpperBoundDetail compute_upper_bound_detail(const MoleculeGraph& g1,
+                                                    const MoleculeGraph& g2,
+                                                    bool connected,
+                                                    int num_starts) {
+    UpperBoundDetail detail;
+    detail.ag = build_association_graph(g1, g2);
+    detail.clique = greedy_clique(detail.ag, g1, g2, connected, num_starts);
+
+    double matched_min_weight_sum = 0.0;
+    for (int v : detail.clique) {
+        matched_min_weight_sum += std::min(g1.bonds[detail.ag.vertices[v].a].bond_type,
+                                           g2.bonds[detail.ag.vertices[v].b].bond_type);
+    }
+    detail.distance_upper_bound = g1.total_bond_weight + g2.total_bond_weight
+                                   - 2.0 * matched_min_weight_sum;
+    return detail;
+}
+
+static double pair_upper_bound_distance(const MoleculeGraph& g1,
+                                         const MoleculeGraph& g2,
+                                         bool connected,
+                                         int num_starts) {
+    return compute_upper_bound_detail(g1, g2, connected, num_starts).distance_upper_bound;
+}
+
+static std::vector<MoleculeGraph> precompute_graphs(const std::vector<std::string>& smiles) {
+    const size_t n = smiles.size();
+    std::vector<MoleculeGraph> graphs(n);
+    #pragma omp parallel for schedule(static)
+    for (size_t i = 0; i < n; ++i) {
+        graphs[i] = build_molecule_graph(smiles[i]);
+    }
+    return graphs;
+}
+
 } // anonymous namespace
 
 McesUpperBoundResult mces_distance_upper_bound(const std::string& smiles1,
-                                                const std::string& smiles2,
-                                                bool connected,
-                                                int num_starts) {
+                                                 const std::string& smiles2,
+                                                 bool connected,
+                                                 int num_starts) {
     using namespace std::chrono;
     auto t0 = steady_clock::now();
 
     MoleculeGraph g1 = build_molecule_graph(smiles1);
     MoleculeGraph g2 = build_molecule_graph(smiles2);
-    AssociationGraph ag = build_association_graph(g1, g2);
-
-    std::vector<int> clique = greedy_clique(ag, g1, g2, connected, num_starts);
+    UpperBoundDetail detail = compute_upper_bound_detail(g1, g2, connected, num_starts);
 
     McesUpperBoundResult res;
     res.connected_mode = connected;
@@ -462,38 +508,65 @@ McesUpperBoundResult mces_distance_upper_bound(const std::string& smiles1,
     res.clique_heuristic = "multi_start_greedy_degree";
     res.random_seed = std::nullopt;
 
-    res.matched_edge_count = static_cast<int>(clique.size());
-    res.matched_edge_pairs.reserve(clique.size());
-    for (int v : clique) {
-        res.matched_edge_pairs.emplace_back(ag.vertices[v].a, ag.vertices[v].b);
+    res.matched_edge_count = static_cast<int>(detail.clique.size());
+    res.matched_edge_pairs.reserve(detail.clique.size());
+    for (int v : detail.clique) {
+        res.matched_edge_pairs.emplace_back(detail.ag.vertices[v].a, detail.ag.vertices[v].b);
     }
 
-    res.association_vertex_count = static_cast<int>(ag.vertices.size());
+    res.association_vertex_count = static_cast<int>(detail.ag.vertices.size());
     int edge_count = 0;
-    for (const auto& nbrs : ag.neighbors) edge_count += static_cast<int>(nbrs.size());
+    for (const auto& nbrs : detail.ag.neighbors) edge_count += static_cast<int>(nbrs.size());
     res.association_edge_count = edge_count / 2;
 
-    // Report the weighted ILP cost of the matched pairing:
-    // sum of bond weights in G1 + sum of bond weights in G2
-    //   - 2 * sum of min(g1.bond_type, g2.bond_type) over matched pairs
-    // The clique found here is feasible for the ILP (stricter atom/bond
-    // compatibility), so this is a valid upper bound on the ILP distance.
-    double total_weight_G1 = 0.0;
-    for (const auto& b : g1.bonds) total_weight_G1 += b.bond_type;
-    double total_weight_G2 = 0.0;
-    for (const auto& b : g2.bonds) total_weight_G2 += b.bond_type;
-
-    double matched_min_weight_sum = 0.0;
-    for (const auto& p : res.matched_edge_pairs) {
-        matched_min_weight_sum += std::min(g1.bonds[p.first].bond_type,
-                                           g2.bonds[p.second].bond_type);
-    }
-    res.distance_upper_bound = total_weight_G1 + total_weight_G2
-                                - 2.0 * matched_min_weight_sum;
+    res.distance_upper_bound = detail.distance_upper_bound;
 
     auto t1 = steady_clock::now();
     res.runtime_ms = static_cast<int>(duration_cast<milliseconds>(t1 - t0).count());
 
-    validate_result(res, ag, g1, g2);
+#ifndef NDEBUG
+    validate_result(res, detail.ag, g1, g2);
+#endif
     return res;
+}
+
+std::vector<double> upper_bound_symmetric_matrix(const std::vector<std::string>& smiles_list,
+                                                  bool connected,
+                                                  int num_starts) {
+    const std::vector<MoleculeGraph> graphs = precompute_graphs(smiles_list);
+    const size_t n = smiles_list.size();
+    std::vector<double> results(n * n, 0.0);
+
+    #pragma omp parallel for schedule(dynamic)
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t j = i; j < n; ++j) {
+            if (i == j) {
+                results[i * n + j] = 0.0;
+                continue;
+            }
+            const double d = pair_upper_bound_distance(graphs[i], graphs[j], connected, num_starts);
+            results[i * n + j] = d;
+            results[j * n + i] = d;
+        }
+    }
+    return results;
+}
+
+std::vector<double> upper_bound_matrix(const std::vector<std::string>& smiles_list1,
+                                        const std::vector<std::string>& smiles_list2,
+                                        bool connected,
+                                        int num_starts) {
+    const std::vector<MoleculeGraph> graphs1 = precompute_graphs(smiles_list1);
+    const std::vector<MoleculeGraph> graphs2 = precompute_graphs(smiles_list2);
+    const size_t n1 = smiles_list1.size();
+    const size_t n2 = smiles_list2.size();
+    std::vector<double> results(n1 * n2, 0.0);
+
+    #pragma omp parallel for schedule(dynamic)
+    for (size_t i = 0; i < n1; ++i) {
+        for (size_t j = 0; j < n2; ++j) {
+            results[i * n2 + j] = pair_upper_bound_distance(graphs1[i], graphs2[j], connected, num_starts);
+        }
+    }
+    return results;
 }

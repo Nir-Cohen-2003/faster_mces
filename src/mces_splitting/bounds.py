@@ -8,6 +8,8 @@ from fast_mces_lower_bound import (
     calculate_symmetric_distance_matrix,
     calculate_distance_matrix,
     mces_distance_upper_bound,
+    upper_bound_symmetric_matrix,
+    upper_bound_matrix,
 )
 
 def filter1(G1: nx.Graph, G2: nx.Graph) -> float:
@@ -253,3 +255,69 @@ def mces_lower_bound(smiles_list1: Sequence[str], smiles_list2: Sequence[str]) -
         Distance matrix where result[i,j] is the distance between molecules i and j
     """
     return calculate_distance_matrix(smiles_list1, smiles_list2)
+
+
+def mces_upper_bound_symmetric(
+    smiles_list: Sequence[str],
+    connected: bool = False,
+    num_starts: int = 100,
+) -> NDArray:
+    """
+    Wrapper for the fast in-process C++ MCES upper bound calculation using SMILES
+    strings directly. Computes the full symmetric upper-bound distance matrix.
+
+    Parameters
+    ----------
+    smiles_list : list of str
+        List of SMILES strings representing molecules
+    connected : bool
+        Whether to consider only connected subgraphs (default: False)
+    num_starts : int
+        Number of random starts for the upper-bound heuristic (default: 100)
+
+    Returns
+    -------
+    numpy.ndarray
+        Symmetric distance matrix where result[i, j] is the upper bound on the
+        distance between molecules i and j
+    """
+    return upper_bound_symmetric_matrix(
+        list(smiles_list), connected=connected, num_starts=num_starts
+    )
+
+
+def mces_upper_bound(
+    smiles_list1: Sequence[str],
+    smiles_list2: Sequence[str],
+    connected: bool = False,
+    num_starts: int = 100,
+) -> NDArray:
+    """
+    Wrapper for the fast in-process C++ MCES upper bound calculation using SMILES
+    strings directly. Computes a rectangular upper-bound distance matrix between
+    two sets of molecules.
+
+    Parameters
+    ----------
+    smiles_list1 : list of str
+        List of SMILES strings representing the first set of molecules
+    smiles_list2 : list of str
+        List of SMILES strings representing the second set of molecules
+    connected : bool
+        Whether to consider only connected subgraphs (default: False)
+    num_starts : int
+        Number of random starts for the upper-bound heuristic (default: 100)
+
+    Returns
+    -------
+    numpy.ndarray
+        Distance matrix of shape (len(smiles_list1), len(smiles_list2)) where
+        result[i, j] is the upper bound on the distance between molecule i of
+        ``smiles_list1`` and molecule j of ``smiles_list2``
+    """
+    return upper_bound_matrix(
+        list(smiles_list1),
+        list(smiles_list2),
+        connected=connected,
+        num_starts=num_starts,
+    )

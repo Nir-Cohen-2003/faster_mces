@@ -37,6 +37,40 @@ nb::ndarray<nb::numpy, cost> py_calculate_distance_matrix(const std::vector<std:
     return nb::ndarray<nb::numpy, cost>(data, {n1, n2}, owner);
 }
 
+nb::ndarray<nb::numpy, double> py_upper_bound_symmetric_matrix(const std::vector<std::string>& smiles_list,
+                                                                 bool connected,
+                                                                 int num_starts) {
+    auto result_vec = upper_bound_symmetric_matrix(smiles_list, connected, num_starts);
+    size_t n = smiles_list.size();
+    
+    double* data = new double[result_vec.size()];
+    std::copy(result_vec.begin(), result_vec.end(), data);
+    
+    nb::capsule owner(data, [](void* p) noexcept {
+        delete[] static_cast<double*>(p);
+    });
+    
+    return nb::ndarray<nb::numpy, double>(data, {n, n}, owner);
+}
+
+nb::ndarray<nb::numpy, double> py_upper_bound_matrix(const std::vector<std::string>& smiles_list1,
+                                                       const std::vector<std::string>& smiles_list2,
+                                                       bool connected,
+                                                       int num_starts) {
+    auto result_vec = upper_bound_matrix(smiles_list1, smiles_list2, connected, num_starts);
+    size_t n1 = smiles_list1.size();
+    size_t n2 = smiles_list2.size();
+    
+    double* data = new double[result_vec.size()];
+    std::copy(result_vec.begin(), result_vec.end(), data);
+    
+    nb::capsule owner(data, [](void* p) noexcept {
+        delete[] static_cast<double*>(p);
+    });
+    
+    return nb::ndarray<nb::numpy, double>(data, {n1, n2}, owner);
+}
+
 static nb::dict py_mces_distance_upper_bound(const std::string& smiles1,
                                               const std::string& smiles2,
                                               nb::dict config) {
@@ -86,4 +120,11 @@ NB_MODULE(fast_mces_lower_bound, m) {
     m.def("mces_distance_upper_bound", &py_mces_distance_upper_bound,
           nb::arg("smiles1"), nb::arg("smiles2"), nb::arg("config") = nb::dict(),
           "Compute a deterministic clique-based upper bound on the MCES distance");
+    m.def("upper_bound_symmetric_matrix", &py_upper_bound_symmetric_matrix,
+          nb::arg("smiles_list"), nb::arg("connected") = false, nb::arg("num_starts") = 100,
+          "Compute a symmetric upper-bound distance matrix in-process with OpenMP");
+    m.def("upper_bound_matrix", &py_upper_bound_matrix,
+          nb::arg("smiles_list1"), nb::arg("smiles_list2"),
+          nb::arg("connected") = false, nb::arg("num_starts") = 100,
+          "Compute a rectangular upper-bound distance matrix in-process with OpenMP");
 }

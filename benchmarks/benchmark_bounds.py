@@ -19,9 +19,7 @@ import os
 import sys
 import threading
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from contextlib import contextmanager
-from itertools import combinations
 from multiprocessing import cpu_count
 from pathlib import Path
 from typing import Any, Callable, Generator, Iterable, Sequence
@@ -32,8 +30,8 @@ import psutil
 from rdkit import Chem
 
 # Package APIs
-from mces_splitting import mces_distance_upper_bound
 from mces_splitting.bounds import mces_lower_bound_symmetric
+from mces_splitting.bounds import mces_upper_bound_symmetric
 from mces_splitting.mces import exact_mces_for_list_of_pairs
 
 
@@ -102,27 +100,8 @@ def timed_with_cpu(
 
 
 # ---------------------------------------------------------------------------
-# Upper-bound worker helpers (module level for pickling)
+# Upper-bound benchmark (in-process, OpenMP parallelised in C++)
 # ---------------------------------------------------------------------------
-def _upper_worker_single(
-    args: tuple[int, int, str, str, dict[str, Any]],
-) -> tuple[int, int, float]:
-    i, j, s1, s2, config = args
-    res = mces_distance_upper_bound(s1, s2, config)
-    return i, j, float(res["distance_upper_bound"])
-
-
-def _upper_worker_batch(
-    args: tuple[list[tuple[int, int]], list[str], dict[str, Any]],
-) -> list[tuple[int, int, float]]:
-    pairs, smiles, config = args
-    results = []
-    for i, j in pairs:
-        res = mces_distance_upper_bound(smiles[i], smiles[j], config)
-        results.append((i, j, float(res["distance_upper_bound"])))
-    return results
-
-
 def upper_bound_matrix(
     smiles: list[str],
     n_jobs: int = -1,
@@ -130,40 +109,25 @@ def upper_bound_matrix(
     connected: bool = False,
     verbose: bool = True,
 ) -> tuple[np.ndarray, float, dict[str, Any]]:
-    """Compute full symmetric upper-bound matrix in parallel."""
+    """Compute full symmetric upper-bound matrix in-process via the C++ OpenMP implementation."""
     n = len(smiles)
     n_jobs = cpu_count() if n_jobs == -1 else n_jobs
     n_jobs = max(1, min(n_jobs, cpu_count()))
 
-    pairs = list(combinations(range(n), 2))
-    config = {"connected": connected, "num_starts": num_starts}
-
-    # Adaptive batch size: aim for ~8 batches per worker.
-    n_batches_target = max(n_jobs * 8, 1)
-    batch_size = max(100, len(pairs) // n_batches_target)
-    batches = [pairs[k : k + batch_size] for k in range(0, len(pairs), batch_size)]
-
     if verbose:
         print(
-            f"  upper bound: {len(pairs)} pairs in {len(batches)} batches using {n_jobs} workers"
+            f"  upper bound: {n * (n - 1) // 2} pairs using up to {n_jobs} OpenMP threads"
         )
 
     def run() -> np.ndarray:
-        mat = np.zeros((n, n), dtype=float)
-        with ProcessPoolExecutor(max_workers=n_jobs) as executor:
-            future_to_batch = {
-                executor.submit(_upper_worker_batch, (batch, smiles, config)): batch
-                for batch in batches
-            }
-            for future in as_completed(future_to_batch):
-                try:
-                    batch_results = future.result()
-                except Exception as exc:
-                    batch = future_to_batch[future]
-                    raise RuntimeError(f"Upper-bound batch failed: {exc}") from exc
-                for i, j, d in batch_results:
-                    mat[i, j] = mat[j, i] = d
-        return mat
+        # Configure OpenMP thread count for the in-process C++ computation.
+        # Only set OMP_NUM_THREADS if the caller explicitly asked for a thread
+        # count and the environment variable is not already set.
+        if n_jobs > 0 and "OMP_NUM_THREADS" not in os.environ:
+            os.environ["OMP_NUM_THREADS"] = str(n_jobs)
+        return mces_upper_bound_symmetric(
+            smiles, connected=connected, num_starts=num_starts
+        )
 
     mat, elapsed, cpu = timed_with_cpu(run)
     return mat, elapsed, cpu
