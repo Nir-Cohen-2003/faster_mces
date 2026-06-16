@@ -6,6 +6,7 @@ This package provides tools to:
 
 - Compute **exact MCES distances** between molecules using Integer Linear Programming (ILP).
 - Compute **fast lower bounds** for MCES distances (delegated to the C++ `fast_mces_lower_bound` extension).
+- Compute **fast upper bounds** for MCES distances using a clique-based heuristic (also from the C++ extension).
 - **Split molecular datasets** into train/validation/test sets while ensuring structural diversity based on MCES distance thresholds.
 
 The dataset splitting strategy works by computing pairwise molecule distances, clustering non-distinct molecules, and distributing clusters across splits to maximize structural separation.
@@ -77,9 +78,19 @@ from mces_splitting import (
     split_dataset_umap,
     split_dataset,
     mces_lower_bounds,
+    mces_upper_bounds,
+    mces_distance_upper_bound,
 )
 
 smiles = ["CCO", "CC=O", "c1ccccc1", "CC(NC)CC1=CC=C(OCO2)C2=C1"]
+
+# Compute fast upper/lower bound matrices
+lb_matrix = mces_lower_bounds(smiles)
+ub_matrix = mces_upper_bounds(smiles)
+
+# Or compute a single upper bound between two molecules
+result = mces_distance_upper_bound(smiles[0], smiles[1])
+ub = result["distance_upper_bound"]
 
 # Split using fast lower bounds only
 train, val, test, threshold = split_dataset_lower_bound_only(
@@ -264,6 +275,50 @@ Internal helper that computes the cost of mapping node `i` in `G1` to node `j` i
 
 ---
 
+#### `mces_upper_bound_symmetric(smiles_list, connected=False, num_starts=100) -> np.ndarray`
+
+Computes a symmetric upper-bound distance matrix for a list of SMILES strings using the fast C++ clique-based heuristic.
+
+- **Parameters:**
+  - `smiles_list` (`Sequence[str]`): List of SMILES strings.
+  - `connected` (`bool`): If `True`, restrict the heuristic to connected common subgraphs.
+  - `num_starts` (`int`): Number of random starts for the heuristic (default `100`).
+
+- **Returns:**
+  - `np.ndarray`: Symmetric `(n, n)` upper-bound distance matrix.
+
+---
+
+#### `mces_upper_bound(smiles_list1, smiles_list2, connected=False, num_starts=100) -> np.ndarray`
+
+Computes a rectangular upper-bound distance matrix between two lists of SMILES strings using the fast C++ clique-based heuristic.
+
+- **Parameters:**
+  - `smiles_list1` (`Sequence[str]`): First list of SMILES strings.
+  - `smiles_list2` (`Sequence[str]`): Second list of SMILES strings.
+  - `connected` (`bool`): If `True`, restrict the heuristic to connected common subgraphs.
+  - `num_starts` (`int`): Number of random starts for the heuristic (default `100`).
+
+- **Returns:**
+  - `np.ndarray`: `(n1, n2)` upper-bound distance matrix.
+
+---
+
+#### `mces_distance_upper_bound(smiles1, smiles2, connected=False, num_starts=100)`
+
+Computes a single MCES upper bound between two molecules using the C++ clique-based heuristic.
+
+- **Parameters:**
+  - `smiles1` (`str`): First SMILES string.
+  - `smiles2` (`str`): Second SMILES string.
+  - `connected` (`bool`): If `True`, restrict the heuristic to connected common subgraphs.
+  - `num_starts` (`int`): Number of random starts for the heuristic (default `100`).
+
+- **Returns:**
+  - `dict`: Dictionary containing at least `"distance_upper_bound"`. The exact distance value returned for the discovered common subgraph is guaranteed to be an upper bound on the true MCES distance.
+
+---
+
 ### `mces_splitting.dataset_splitting`
 
 Functions for splitting molecular datasets into train/validation/test sets using MCES-based structural distinctness.
@@ -405,6 +460,8 @@ The following are imported directly from the top-level `mces_splitting` package:
 | Export Name | Points To |
 |-------------|-----------|
 | `mces_lower_bounds` | `bounds.mces_lower_bound_symmetric` |
+| `mces_upper_bounds` | `bounds.mces_upper_bound_symmetric` |
+| `mces_distance_upper_bound` | `bounds.mces_distance_upper_bound` |
 | `exact_mces_for_list_of_pairs` | `mces.exact_mces_for_list_of_pairs` |
 | `split_dataset_lower_bound_only` | `dataset_splitting.split_dataset_adaptive_threshold` |
 | `split_dataset_with_exact_mces` | `dataset_splitting.split_dataset_brute_force_exact` |
@@ -474,6 +531,13 @@ The Maximum Common Edge Subgraph (MCES) distance measures the structural differe
 Two fast lower-bound filters are provided:
 1. **`filter1`** — Degree-based bound (fast, loose).
 2. **`filter2_from_lib`** — Neighborhood-based bound using minimum-weight matching (slower, tighter). The C++ `fast_mces_lower_bound` extension implements an optimized version of this bound.
+
+### Upper Bounds
+The C++ extension also provides a fast clique-based upper bound:
+- **`mces_distance_upper_bound`** — Computes a single upper bound between two SMILES strings.
+- **`mces_upper_bound_symmetric`** / **`mces_upper_bound`** — Compute full symmetric or rectangular upper-bound distance matrices.
+
+The upper bound is found by heuristically growing a common edge subgraph and returning its distance; it is therefore guaranteed to be **no smaller** than the exact MCES distance. Increasing `num_starts` trades runtime for a potentially tighter bound.
 
 ### Dataset Splitting
 1. Compute pairwise lower bounds (or exact distances).

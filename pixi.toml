@@ -14,7 +14,7 @@ channel-priority = "disabled"
 cuda = "13.0"
 [package]
 name = "mces_splitting"
-version = "0.4.0"
+version = "0.6.0"
 authors = ["Nir"]
 description = "MCES-based dataset splitting"
 
