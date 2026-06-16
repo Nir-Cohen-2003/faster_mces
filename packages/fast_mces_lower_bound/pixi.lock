@@ -707,7 +707,7 @@ packages:
   timestamp: 1763918099466
 - conda: .
   name: fast_mces_lower_bound
-  version: 0.2.0
+  version: 1.2.0
   build: h9490d1a_0
   subdir: win-64
   variants:
@@ -722,7 +722,7 @@ packages:
   license: Apache-2.0
 - conda: .
   name: fast_mces_lower_bound
-  version: 0.2.0
+  version: 1.2.0
   build: hb0f4dca_0
   subdir: linux-64
   variants:

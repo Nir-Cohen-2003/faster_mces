@@ -18,6 +18,10 @@ python = "3.12.*"
 rattler-build = "*"
 fast_mces_lower_bound = { path = "." }
 
+[tasks]
+publish-prefix = {cmd="rattler-build upload prefix --channel nir-cohen"}
+publish-anaconda = {cmd="rattler-build upload anaconda --owner Nir_Cohen --channel main"}
+
 [feature.test.dependencies]
 pytest = "*"
 networkx = "*"
