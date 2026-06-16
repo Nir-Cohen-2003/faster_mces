@@ -1,55 +1,55 @@
 context:
-    name: "fast_mces_lower_bound"
-    version: "0.2.0"
+  name: "fast_mces_lower_bound"
+  version: "1.2.0"
 
 package:
-    name: "${{ name|lower }}"
-    version: "${{ version }}"
+  name: "${{ name|lower }}"
+  version: "${{ version }}"
 
 source:
-    path: .
+  path: .
 
 build:
-    number: 0
-    python:
-        version_independent: true
+  number: 0
+  python:
+    version_independent: true
 
 requirements:
-    ignore_run_exports:
-        by_name:
-            - python_abi
-    build:
-        - ${{ compiler('cxx') }}
-        - python >=3.8
-        - pip
-        - python-build
-        - librdkit-dev
-        - nanobind
-        - boost
-        - scikit-build-core
-        - cmake
-        - ninja
-    host:
-        - python >=3.8
-        - pip
-        - python-build
-        - librdkit-dev
-        - nanobind
-        - boost
-        - scikit-build-core
-        - cmake
-        - ninja
-    run:
-        - python >=3.8
-        - rdkit
-        - numpy
-        - boost
+  ignore_run_exports:
+    by_name:
+      - python_abi
+  build:
+    - ${{ compiler('cxx') }}
+    - python >=3.8
+    - pip
+    - python-build
+    - librdkit-dev
+    - nanobind
+    - boost
+    - scikit-build-core
+    - cmake
+    - ninja
+  host:
+    - python >=3.8
+    - pip
+    - python-build
+    - librdkit-dev
+    - nanobind
+    - boost
+    - scikit-build-core
+    - cmake
+    - ninja
+  run:
+    - python >=3.8
+    - rdkit
+    - numpy
+    - boost
 
 tests:
-    - python:
-          imports:
-              - fast_mces_lower_bound
+  - python:
+      imports:
+        - fast_mces_lower_bound
 
 about:
-    summary: "A parallel RDKit utilities implementation"
-    license: Apache-2.0
+  summary: "A parallel RDKit utilities implementation"
+  license: Apache-2.0
